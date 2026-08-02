@@ -1,0 +1,286 @@
+{
+  "title": "自动解析故事",
+  "total_duration": 50.0,
+  "characters": [
+    {
+      "name": "中划过一",
+      "description": "角色中划过一",
+      "voice_type": "青年男声"
+    },
+    {
+      "name": "上带着一",
+      "description": "角色上带着一",
+      "voice_type": "青年男声"
+    },
+    {
+      "name": "林墨低声",
+      "description": "角色林墨低声",
+      "voice_type": "青年男声"
+    }
+  ],
+  "scenes": [
+    {
+      "scene_id": 1,
+      "title": "场景1",
+      "location": "未知",
+      "time": "日",
+      "atmosphere": "neutral",
+      "summary": "在一个风雨交加的夜晚，年轻的侦探林墨独自站在废弃的钟楼顶端。雨水顺着他的黑色风衣滑落，他的目光紧锁着",
+      "shots": [
+        {
+          "shot_id": 1,
+          "description": "在一个风雨交加的夜晚，年轻的侦探林墨独自站在废弃的钟楼顶端。雨水顺着他的黑色风衣滑落，他的目光紧锁着对面大楼里一闪而过的身影。",
+          "characters": [
+            "人物"
+          ],
+          "dialogue": "",
+          "speaker": "",
+          "narration": "在一个风雨交加的夜晚，年轻的侦探林墨独自站在废弃的钟楼顶端。雨水顺着他的黑色风衣滑落，他的目光紧锁着对面大楼里一闪而过的身影。",
+          "estimated_duration": 5.0,
+          "mood": "neutral",
+          "camera_movement": "static",
+          "image_prompt": "Anime style scene: 在一个风雨交加的夜晚，年轻的侦探林墨独自站在废弃的钟楼顶端。雨水顺着他的黑色风衣滑落，他的目光紧锁着对面大楼里一闪而过的身影。"
+        }
+      ],
+      "total_duration": 5.0
+    },
+    {
+      "scene_id": 2,
+      "title": "场景2",
+      "location": "未知",
+      "time": "日",
+      "atmosphere": "neutral",
+      "summary": "\"终于等到你了。\"林墨低声说道，嘴角浮现出一丝笑意。",
+      "shots": [
+        {
+          "shot_id": 1,
+          "description": "\"终于等到你了。\"林墨低声说道，嘴角浮现出一丝笑意。",
+          "characters": [
+            "林墨低声"
+          ],
+          "dialogue": "终于等到你了。",
+          "speaker": "",
+          "narration": "\"终于等到你了。\"林墨低声说道，嘴角浮现出一丝笑意。",
+          "estimated_duration": 5.0,
+          "mood": "neutral",
+          "camera_movement": "static",
+          "image_prompt": "Anime style scene: \"终于等到你了。\"林墨低声说道，嘴角浮现出一丝笑意。"
+        }
+      ],
+      "total_duration": 5.0
+    },
+    {
+      "scene_id": 3,
+      "title": "场景3",
+      "location": "未知",
+      "time": "日",
+      "atmosphere": "neutral",
+      "summary": "他纵身一跃，在夜空中划过一道黑色的弧线。雨幕中，他准确地抓住了对面楼顶的边缘，一个翻身稳稳落地。",
+      "shots": [
+        {
+          "shot_id": 1,
+          "description": "他纵身一跃，在夜空中划过一道黑色的弧线。雨幕中，他准确地抓住了对面楼顶的边缘，一个翻身稳稳落地。",
+          "characters": [
+            "中划过一",
+            "林墨低声"
+          ],
+          "dialogue": "",
+          "speaker": "",
+          "narration": "他纵身一跃，在夜空中划过一道黑色的弧线。雨幕中，他准确地抓住了对面楼顶的边缘，一个翻身稳稳落地。",
+          "estimated_duration": 5.0,
+          "mood": "neutral",
+          "camera_movement": "static",
+          "image_prompt": "Anime style scene: 他纵身一跃，在夜空中划过一道黑色的弧线。雨幕中，他准确地抓住了对面楼顶的边缘，一个翻身稳稳落地。"
+        }
+      ],
+      "total_duration": 5.0
+    },
+    {
+      "scene_id": 4,
+      "title": "场景4",
+      "location": "未知",
+      "time": "日",
+      "atmosphere": "neutral",
+      "summary": "\"林墨，你还真是阴魂不散。\"阴暗处传来一个沙哑的声音。",
+      "shots": [
+        {
+          "shot_id": 1,
+          "description": "\"林墨，你还真是阴魂不散。\"阴暗处传来一个沙哑的声音。",
+          "characters": [
+            "中划过一",
+            "林墨低声"
+          ],
+          "dialogue": "林墨，你还真是阴魂不散。",
+          "speaker": "",
+          "narration": "\"林墨，你还真是阴魂不散。\"阴暗处传来一个沙哑的声音。",
+          "estimated_duration": 5.0,
+          "mood": "neutral",
+          "camera_movement": "static",
+          "image_prompt": "Anime style scene: \"林墨，你还真是阴魂不散。\"阴暗处传来一个沙哑的声音。"
+        }
+      ],
+      "total_duration": 5.0
+    },
+    {
+      "scene_id": 5,
+      "title": "场景5",
+      "location": "未知",
+      "time": "日",
+      "atmosphere": "neutral",
+      "summary": "\"老K，你逃不掉的。三年前那起珠宝案，今天该有个了结了。\"",
+      "shots": [
+        {
+          "shot_id": 1,
+          "description": "\"老K，你逃不掉的。三年前那起珠宝案，今天该有个了结了。\"",
+          "characters": [
+            "中划过一",
+            "林墨低声"
+          ],
+          "dialogue": "老K，你逃不掉的。三年前那起珠宝案，今天该有个了结了。",
+          "speaker": "",
+          "narration": "\"老K，你逃不掉的。三年前那起珠宝案，今天该有个了结了。\"",
+          "estimated_duration": 5.0,
+          "mood": "neutral",
+          "camera_movement": "static",
+          "image_prompt": "Anime style scene: \"老K，你逃不掉的。三年前那起珠宝案，今天该有个了结了。\""
+        }
+      ],
+      "total_duration": 5.0
+    },
+    {
+      "scene_id": 6,
+      "title": "场景6",
+      "location": "未知",
+      "time": "日",
+      "atmosphere": "neutral",
+      "summary": "老K从阴影中走出，他穿着一件灰色的风衣，脸上带着一道狰狞的疤痕。",
+      "shots": [
+        {
+          "shot_id": 1,
+          "description": "老K从阴影中走出，他穿着一件灰色的风衣，脸上带着一道狰狞的疤痕。",
+          "characters": [
+            "中划过一",
+            "上带着一",
+            "林墨低声"
+          ],
+          "dialogue": "",
+          "speaker": "",
+          "narration": "老K从阴影中走出，他穿着一件灰色的风衣，脸上带着一道狰狞的疤痕。",
+          "estimated_duration": 5.0,
+          "mood": "neutral",
+          "camera_movement": "static",
+          "image_prompt": "Anime style scene: 老K从阴影中走出，他穿着一件灰色的风衣，脸上带着一道狰狞的疤痕。"
+        }
+      ],
+      "total_duration": 5.0
+    },
+    {
+      "scene_id": 7,
+      "title": "场景7",
+      "location": "未知",
+      "time": "日",
+      "atmosphere": "neutral",
+      "summary": "\"你以为就凭你一个人，能抓住我？\"老K冷笑着，从口袋里掏出一个遥控器,\"这栋楼里装满了炸药，只要我按",
+      "shots": [
+        {
+          "shot_id": 1,
+          "description": "\"你以为就凭你一个人，能抓住我？\"老K冷笑着，从口袋里掏出一个遥控器,\"这栋楼里装满了炸药，只要我按下这个按钮，我们都会死。\"",
+          "characters": [
+            "中划过一",
+            "上带着一",
+            "林墨低声"
+          ],
+          "dialogue": "你以为就凭你一个人，能抓住我？",
+          "speaker": "",
+          "narration": "\"你以为就凭你一个人，能抓住我？\"老K冷笑着，从口袋里掏出一个遥控器,\"这栋楼里装满了炸药，只要我按下这个按钮，我们都会死。\"",
+          "estimated_duration": 5.0,
+          "mood": "neutral",
+          "camera_movement": "static",
+          "image_prompt": "Anime style scene: \"你以为就凭你一个人，能抓住我？\"老K冷笑着，从口袋里掏出一个遥控器,\"这栋楼里装满了炸药，只要我按下这个按钮，我们都会死。\""
+        }
+      ],
+      "total_duration": 5.0
+    },
+    {
+      "scene_id": 8,
+      "title": "场景8",
+      "location": "未知",
+      "time": "日",
+      "atmosphere": "neutral",
+      "summary": "林墨不为所动：\"你不会按的。你想要的是自由，不是同归于尽。\"",
+      "shots": [
+        {
+          "shot_id": 1,
+          "description": "林墨不为所动：\"你不会按的。你想要的是自由，不是同归于尽。\"",
+          "characters": [
+            "中划过一",
+            "上带着一",
+            "林墨低声"
+          ],
+          "dialogue": "你不会按的。你想要的是自由，不是同归于尽。",
+          "speaker": "",
+          "narration": "林墨不为所动：\"你不会按的。你想要的是自由，不是同归于尽。\"",
+          "estimated_duration": 5.0,
+          "mood": "neutral",
+          "camera_movement": "static",
+          "image_prompt": "Anime style scene: 林墨不为所动：\"你不会按的。你想要的是自由，不是同归于尽。\""
+        }
+      ],
+      "total_duration": 5.0
+    },
+    {
+      "scene_id": 9,
+      "title": "场景9",
+      "location": "未知",
+      "time": "日",
+      "atmosphere": "neutral",
+      "summary": "就在这时，警笛声从远处传来。老K脸色一变，转身就跑。林墨立即追了上去，两人在楼顶展开了惊心动魄的追逐",
+      "shots": [
+        {
+          "shot_id": 1,
+          "description": "就在这时，警笛声从远处传来。老K脸色一变，转身就跑。林墨立即追了上去，两人在楼顶展开了惊心动魄的追逐。",
+          "characters": [
+            "中划过一",
+            "上带着一",
+            "林墨低声"
+          ],
+          "dialogue": "",
+          "speaker": "",
+          "narration": "就在这时，警笛声从远处传来。老K脸色一变，转身就跑。林墨立即追了上去，两人在楼顶展开了惊心动魄的追逐。",
+          "estimated_duration": 5.0,
+          "mood": "neutral",
+          "camera_movement": "static",
+          "image_prompt": "Anime style scene: 就在这时，警笛声从远处传来。老K脸色一变，转身就跑。林墨立即追了上去，两人在楼顶展开了惊心动魄的追逐。"
+        }
+      ],
+      "total_duration": 5.0
+    },
+    {
+      "scene_id": 10,
+      "title": "场景10",
+      "location": "未知",
+      "time": "日",
+      "atmosphere": "neutral",
+      "summary": "老K跳上了一个吊塔，林墨紧随其后。雨水让钢梁变得异常湿滑，每一步都充满了危险。",
+      "shots": [
+        {
+          "shot_id": 1,
+          "description": "老K跳上了一个吊塔，林墨紧随其后。雨水让钢梁变得异常湿滑，每一步都充满了危险。",
+          "characters": [
+            "中划过一",
+            "上带着一",
+            "林墨低声"
+          ],
+          "dialogue": "",
+          "speaker": "",
+          "narration": "老K跳上了一个吊塔，林墨紧随其后。雨水让钢梁变得异常湿滑，每一步都充满了危险。",
+          "estimated_duration": 5.0,
+          "mood": "neutral",
+          "camera_movement": "static",
+          "image_prompt": "Anime style scene: 老K跳上了一个吊塔，林墨紧随其后。雨水让钢梁变得异常湿滑，每一步都充满了危险。"
+        }
+      ],
+      "total_duration": 5.0
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "storyboard": null,
+  "project_folder": "",
+  "project_opened": false,
+  "inputs": {
+    "text": "",
+    "style": "通用",
+    "subject": "",
+    "character_desc": "",
+    "target_shots": 5,
+    "min_sec": 3,
+    "max_sec": 6
+  },
+  "profile": {},
+  "interview": {
+    "answers": {},
+    "done": false
+  }
+}
