@@ -132,10 +132,24 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get('Content-Length', 0))
         if not 0 < length <= 4 * 1024 * 1024:
             raise ValueError('请求大小不合法')
-        value = json.loads(self.rfile.read(length).decode('utf-8'))
+        body = self.rfile.read(length)
+        self._body_consumed = True
+        value = json.loads(body.decode('utf-8'))
         if not isinstance(value, dict):
             raise ValueError('请求必须是 JSON 对象')
         return value
+    def _discard_rejected_body(self):
+        # Closing Windows sockets with unread POST data can reset the connection
+        # before the browser receives the rejection. Drain bounded bodies only.
+        if getattr(self, '_body_consumed', False):
+            return
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            if 0 < length <= 4 * 1024 * 1024:
+                self.connection.settimeout(1)
+                self.rfile.read(length)
+        except (OSError, ValueError):
+            pass
     def _current(self, data=None):
         pid = (data or {}).get('project_id', SESSION.get('project_id'))
         if not pid:
@@ -200,6 +214,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         except (ValueError, KeyError, OSError) as exc:
             self._send_json(400, {'error': str(exc)})
     def do_POST(self):
+        self._body_consumed = False
         try:
             self._guard(write=True)
             path = urlparse(self.path).path
@@ -313,8 +328,10 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     return self._send_json(404, {'error': '接口不存在'})
             self._send_json(200, result)
         except PermissionError as exc:
+            self._discard_rejected_body()
             self._send_json(403, {'error': str(exc)})
         except (ValueError, KeyError, TypeError) as exc:
+            self._discard_rejected_body()
             self._send_json(400, {'error': str(exc)})
         except Exception as exc:
             self._send_json(500, {'error': str(exc)})

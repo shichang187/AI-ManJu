@@ -21,6 +21,7 @@ from modules.media_export import scan, snapshot, export, probe, run
 from modules.browser_workflow import build_storyboard
 from modules.creative import parse_model_result
 from modules.prompt_library import PromptLibrary
+from modules.catalog_import import content_labels
 
 if os.environ.get('AIMANJU_REQUIRE_MEDIA_TESTS') == '1' and not (shutil.which('ffmpeg') and shutil.which('ffprobe')):
     raise RuntimeError('Required media integration dependencies are unavailable')
@@ -98,6 +99,11 @@ class ProjectTests(unittest.TestCase):
         personal=lib.save_personal({'source_id':item['id'],'text':'改写版','stage':'角色','evaluation':'待实际生成'})
         restored=PromptLibrary(builtin,self.root/'private')
         self.assertEqual(restored.detail(personal['id'])['evaluation'],'待实际生成')
+    def test_content_suggestions_distinguish_mixed_rows_and_generic_instructions(self):
+        # Original fictional fixtures, never downloaded source examples.
+        self.assertEqual(content_labels('测试','你是一位材料清点员。输出格式：数量。','test.txt','扩展')['kind'],'完整指令')
+        self.assertEqual(content_labels('测试','镜头：平移\n动作：举起雨伞\n风格：暖色','test.csv','风格')['kind'],'组合条目')
+        self.assertNotEqual(content_labels('测试','将长句替换为短句的写作说明。','test.txt','扩展')['kind'],'可编辑模板')
 
 @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg integration requires both binaries')
 class MediaTests(unittest.TestCase):

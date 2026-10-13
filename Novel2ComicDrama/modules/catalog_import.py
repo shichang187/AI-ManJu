@@ -31,13 +31,16 @@ def content_labels(title, body, source, base_stage):
     if re.fullmatch(r'https?://\S+', body.strip()):
         kind, usage = '参考链接', '参考链接'
     elif any(w in body[:6000] for w in ('角色定义', '系统指令', '你是一', '输出格式', '工作流程')):
-        kind, usage = '导演指令', '先给对话模型'
+        kind = '导演指令' if any(w in body[:6000] for w in ('漫剧', '分镜', '导演', '电影', '镜头')) else '完整指令'
+        usage = '先给对话模型'
     elif any(w in body[:3000] for w in ('教程', '点击', '操作步骤', '安装', '使用方法')):
         kind, usage = '教程', '阅读后操作'
-    elif any(w in body for w in ('{{', '【角色】', '[角色]', '替换为', '填入')):
+    elif any(w in body for w in ('{{', '【角色】', '[角色]', '[此处', '请填入')):
         kind, usage = '可编辑模板', '填写后使用'
     elif any(w in body[:2000] for w in ('示例', '案例', '例如')):
         kind, usage = '示例', '参考后改写'
+    elif len(body.splitlines()) >= 3 and sum('：' in line for line in body.splitlines()) >= 3:
+        kind, usage = '组合条目', '选取并改写'
     elif len(body) < 700 and any(w in body for w in ('推镜', '拉镜', '运镜', '镜头移动', 'pan', 'dolly')):
         kind, usage = '运镜片段', '组合进镜头'
     elif len(body) < 700 and any(w in body for w in ('风格', '质感', '配色', 'style', '光影')):
@@ -98,7 +101,7 @@ class CatalogImportMixin:
         return root
 
     def _import_folder(self, folder, already_locked=False):
-        from .prompt_library import SUPPORTED, LIMIT, read_entries, make_entry, decode_text
+        from .prompt_library import SUPPORTED, LIMIT, read_entries, make_entry, decode_text, classify
         root = self._check_folder(folder)
         if not already_locked and not self.import_lock.acquire(blocking=False):
             raise ValueError('已有资料导入任务')
@@ -183,6 +186,9 @@ class CatalogImportMixin:
                             if missing:
                                 components.append('无文本页面尚未提取：' + ','.join(map(str, missing)))
                         item['unextracted_components'] = components
+                    # Reevaluate suggestions even when raw extraction is fingerprint-cached.
+                    for e in item['entries']:
+                        e.update(content_labels(e['title'], e['text'], rel, classify(e['title'], rel)))
                     for reason in item.get('unextracted_components', []):
                         issues.append({'file': rel, 'reason': reason})
                     after = path.stat()
