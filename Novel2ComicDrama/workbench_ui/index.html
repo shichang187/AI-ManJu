@@ -231,7 +231,7 @@
     }
   </style>
   <link rel="stylesheet" href="/assets/prompt-library.css">
-</head>
+<link rel="stylesheet" href="/assets/upgrade.css"></head>
 <body>
   <header>
     <span class="dot"></span>
@@ -263,7 +263,7 @@
         </div>
         <div class="field">
           <label>镜头数</label>
-          <input id="shotCount" type="number" min="5" max="5" value="5">
+          <input id="shotCount" type="number" min="1" max="300" value="5">
         </div>
         <div class="field">
           <label>最短时长（秒）</label>
@@ -318,7 +318,7 @@
           <input id="bgmPath" placeholder="留空则不使用BGM">
         </div>
       </div>
-      <div class="shot-line" style="margin-top:12px">视频命名：1.mp4、2.mp4、3.mp4、4.mp4、5.mp4</div>
+      <div class="shot-line" style="margin-top:12px">视频可按镜头 ID 命名，也可在下方手动选择对应素材</div>
       <div class="actions">
         <button class="secondary" onclick="refreshVideos()">刷新视频</button>
         <button id="composeBtn" onclick="composeVideo()" disabled>合成最终视频</button>
@@ -363,16 +363,16 @@
     }
 
     async function api(path, body) {
-      const options = { method: "GET" };
+      const options = { method: "GET", headers: {"X-Workbench-Session": document.querySelector('meta[name="workbench-session"]')?.content || ""} };
       if (body !== undefined) {
         options.method = "POST";
-        options.headers = { "Content-Type": "application/json" };
+        options.headers["Content-Type"] = "application/json"; if(path === "/api/save-storyboard") body = {storyboard:body, project_id:state.projectId || undefined, revision:state.projectId ? state.revision : undefined}; if(state.projectId && !body.project_id && path !== "/api/select-project") body.project_id=state.projectId;
         options.body = JSON.stringify(body);
       }
       const res = await fetch(path, options);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "请求失败");
-      return data;
+      if(data.revision !== undefined) state.revision=data.revision; if(data.project_id) state.projectId=data.project_id; return data;
     }
 
     function escapeHtml(value) {
@@ -503,7 +503,7 @@
       };
       try {
         const res = await api("/api/expand", payload);
-        state.storyboard = res.storyboard;
+        state.storyboard = res.storyboard; state.projectId=""; state.projectFolder=""; state.projectOpened=false;
         renderStoryboard();
         saveState();
         toast("分镜已生成");
@@ -663,8 +663,8 @@
       (async () => {
         try {
           await api("/api/reset", {});
-        } catch (e) {}
-        state.storyboard = null;
+        } catch (e) { toast("重置失败："+e.message); return; }
+        state.storyboard = null; state.projectId="";
         state.projectFolder = "";
         state.projectOpened = false;
         state.lastFinalPath = "";
@@ -746,7 +746,7 @@
       btn.disabled = true;
       document.getElementById("progressWrap").style.display = "block";
       document.getElementById("progressBar").style.width = "2%";
-      document.getElementById("progressText").textContent = "0% 排队中，请勿刷新或关闭页面";
+      document.getElementById("progressText").textContent = "0% 排队中；可以刷新恢复任务状态";
       try {
         const res = await api("/api/compose", {
           bgm_path: document.getElementById("bgmPath").value.trim(),
@@ -766,7 +766,7 @@
           const p = await api("/api/compose-progress?task_id=" + encodeURIComponent(taskId));
           const percent = Math.max(2, p.progress || 0);
           document.getElementById("progressBar").style.width = percent + "%";
-          document.getElementById("progressText").textContent = `${percent}% ${p.step || ""}，请勿刷新或关闭页面`;
+          document.getElementById("progressText").textContent = `${percent}% ${p.step || ""}；可以刷新恢复任务状态`;
           if (p.status === "done") {
             clearInterval(progressTimer);
             document.getElementById("progressBar").style.width = "100%";
@@ -799,7 +799,7 @@
       document.getElementById("subject").value = inputs.subject || "";
       document.getElementById("characterDesc").value = inputs.character_desc || "";
       document.getElementById("style").value = inputs.style || "通用";
-      document.getElementById("minSec").value = inputs.min_sec || 3;
+      document.getElementById("shotCount").value = inputs.target_shots || 5; document.getElementById("minSec").value = inputs.min_sec || 3;
       document.getElementById("maxSec").value = inputs.max_sec || 6;
     }
 
@@ -886,8 +886,8 @@
       }
     }
 
-    restoreState().then(refreshVideos);
+
   </script>
-  <script src="/assets/prompt-library.js"></script>
+  <script src="/assets/upgrade.js"></script><script src="/assets/prompt-library.js"></script>
 </body>
 </html>

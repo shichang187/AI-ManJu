@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 from http.server import ThreadingHTTPServer
@@ -23,7 +24,7 @@ class WorkbenchAPITests(unittest.TestCase):
         with patch.dict(os.environ, {'AIMANJU_OUTPUT_DIR': str(cls.root / 'output'),
                                     'AIMANJU_PRIVATE_DATA_DIR': str(cls.root / 'private'),
                                     'EXPAND_LLM_API_KEY': ''}):
-            cls.module = importlib.import_module('workbench_server')
+            cls.module = importlib.reload(importlib.import_module('workbench_server'))
         cls.server = ThreadingHTTPServer(('127.0.0.1', 0), cls.module.WorkbenchHandler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
@@ -38,7 +39,8 @@ class WorkbenchAPITests(unittest.TestCase):
 
     def request(self, path, data=None, headers=None):
         request = Request(self.url + path, data=None if data is None else json.dumps(data).encode(),
-                          headers={'Content-Type': 'application/json', **(headers or {})})
+                          headers={'Content-Type': 'application/json',
+                                   'X-Workbench-Session': self.module.SESSION_KEY, **(headers or {})})
         try:
             response = urlopen(request, timeout=10)
         except HTTPError as response:
@@ -63,7 +65,12 @@ class WorkbenchAPITests(unittest.TestCase):
         self.assertEqual(self.request('/api/prompts/import', {'folder': str(folder)},
                                      {'Origin': 'https://other.example'})[0], 403)
         code, result = self.request('/api/prompts/import', {'folder': str(folder)}, {'Origin': self.url})
-        self.assertEqual((code, result['entries']), (200, 1))
+        self.assertEqual((code, result['status']), (200, 'running'))
+        deadline = time.monotonic() + 10
+        while self.request('/api/prompts/import-progress')[1]['status'] == 'running':
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(.01)
+        self.assertEqual(self.request('/api/prompts/import-progress')[1]['report']['entries'], 1)
         self.assertTrue((self.root / 'private/library.json').exists())
         self.assertEqual(self.request('/api/prompts/import', {'folder': '.'})[0], 400)
 

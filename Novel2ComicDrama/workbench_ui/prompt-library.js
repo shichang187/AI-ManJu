@@ -22,7 +22,7 @@
         <p>选择已下载、已解压的提示词文件夹。支持 TXT、MD、DOCX、CSV、XLSX；PDF 需可选依赖，旧 DOC 需先提取文本。资料保存在本机。</p>
         <label for="plFolder">本地文件夹的完整路径</label>
         <div class="pl-search"><input id="plFolder" placeholder="例如 D:\\提示词资料">
-          <button id="plImport">导入 / 更新</button></div>
+          <button id="plImport">导入 / 更新</button><button id="plUndoImport" class="secondary">撤销上次导入</button></div>
         <p id="plImportStatus" role="status"></p><div id="plReport"></div>
       </details>
     </div>
@@ -38,7 +38,13 @@
       <label for="plEditor">使用前预览并修改</label><textarea id="plEditor" rows="13"></textarea>
       <div class="pl-dialog-footer"><button id="plCopy">复制提示词</button>
         <label for="plShot">应用到</label><select id="plShot"></select><button id="plApply">替换镜头提示词</button>
-        <button class="secondary" id="plUndo">撤销上次替换</button></div>
+        <button class="secondary" id="plUndo">撤销上次替换</button>
+        <button class="secondary" id="plDirector">用作导演指令</button></div>
+      <details><summary>个人版本与效果记录</summary><label>阶段<select id="plPersonalStage">
+        <option>角色</option><option>场景</option><option>剧本</option><option>分镜</option><option>运镜</option><option>风格</option><option>扩展</option></select></label>
+        <label>用途类别<input id="plPersonalKind" value="个人模板"></label><label>实际输入<textarea id="plActualInput" rows="2"></textarea></label>
+        <label>实际结果<textarea id="plActualResult" rows="2"></textarea></label><label>人工评语<textarea id="plEvaluation" rows="2" placeholder="未验证"></textarea></label>
+        <button class="secondary" id="plPersonalSave">保存个人版本</button></details>
       <p id="plFeedback" role="status"></p>
     </dialog>`;
   const $ = id => document.getElementById(id);
@@ -117,7 +123,8 @@
         current.usage === '参考链接' ? '这条资料只有参考链接。工作台未读取链接内容。' :
         '根据你的角色、场景和镜头修改后使用。替换只改变选定镜头的提示词。') +
         ' 模型适用性与成片效果未验证；平台功能以实际页面为准。';
-      $('plFeedback').textContent = ''; renderVariables(); renderText(); shotOptions();
+      $('plFeedback').textContent = ''; $('plPersonalStage').value=current.stage;
+      $('plPersonalKind').value=current.kind; renderVariables(); renderText(); shotOptions();
       if (!$('plDialog').open) $('plDialog').showModal();
     } catch (e) { toast(e.message); }
   }
@@ -161,6 +168,14 @@
     } catch (e) { Object.keys(shot).forEach(k => delete shot[k]); Object.assign(shot, before); shotOptions(); error('保存失败：' + e.message); }
   }
   $('plApply').addEventListener('click', () => persistChange(false));
+  $('plDirector').addEventListener('click', () => { $('plDialog').close(); upgradeUI.director($('plEditor').value, current.id); });
+  $('plPersonalSave').addEventListener('click', async () => {
+    try { await api('/api/prompts/personal', {source_id:current.id,title:current.title+' · 个人版本',text:$('plEditor').value,
+      stage:$('plPersonalStage').value,kind:$('plPersonalKind').value,input:$('plActualInput').value,
+      result:$('plActualResult').value,evaluation:$('plEvaluation').value || '未验证'});
+      $('plFeedback').textContent='个人版本已保存，来源原文保留。'; await load(); }
+    catch(e) { error('保存失败：'+e.message); }
+  });
   $('plUndo').addEventListener('click', () => persistChange(true));
   $('plShot').addEventListener('change', () => { selectedShot = Number($('plShot').value); $('plUndo').disabled = !shots()[selectedShot]?.prompt_before_library; });
   $('plClose').addEventListener('click', () => $('plDialog').close());
@@ -173,13 +188,24 @@
   $('plImport').addEventListener('click', async () => {
     $('plImport').disabled = true; $('plImportStatus').textContent = '正在读取本地资料，请稍候…';
     try {
-      const result = await api('/api/prompts/import', {folder: $('plFolder').value.trim()});
-      $('plImportStatus').textContent = `已导入 ${result.entries} 条；待处理 ${result.issues.length} 个文件。`; page = 1; await load();
+      await api('/api/prompts/import', {folder: $('plFolder').value.trim()});
+      while(true) {
+        await new Promise(resolve=>setTimeout(resolve,500));
+        const job=await api('/api/prompts/import-progress');
+        $('plImportStatus').textContent=`正在导入 ${job.progress}%；旧库仍可搜索。`;
+        if(job.status==='error') throw Error(job.error);
+        if(job.status==='done') { $('plImportStatus').textContent=`导入完成：${job.report.read_files} 文件，${job.report.entries} 条；未提取或待处理 ${job.report.issues.length} 项。`; break; }
+      }
+      page = 1; await load();
     } catch (e) { $('plImportStatus').textContent = '导入失败：' + e.message; }
     finally { $('plImport').disabled = false; }
   });
+  $('plUndoImport').addEventListener('click', async () => {
+    try { await api('/api/prompts/undo-import', {}); $('plImportStatus').textContent='已恢复上次导入前的资料库。'; await load(); }
+    catch(e) { $('plImportStatus').textContent='撤销失败：'+e.message; }
+  });
   window.promptLibrary = {browse(index = 0) {
-    selectedShot = index; root.scrollIntoView({behavior: 'smooth', block: 'start'}); $('plQuery').focus({preventScroll: true});
+    selectedShot = index; upgradeUI.tab(true); root.scrollIntoView({behavior: 'smooth', block: 'start'}); $('plQuery').focus({preventScroll: true});
   }};
   load();
 })();

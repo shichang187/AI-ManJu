@@ -14,4 +14,4 @@ Novel2ComicDrama - 小说自动转AI漫剧视频系统
 - MoviePy合成基础 + FFmpeg编解码
 """
 
-__version__ = "0.1.0"
+__version__ = "0.6.0"

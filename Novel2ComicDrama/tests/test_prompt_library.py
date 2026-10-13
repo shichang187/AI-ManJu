@@ -33,8 +33,10 @@ class CatalogTests(unittest.TestCase):
         (self.source / '角色(1).txt').unlink()
         (self.source / '角色.txt').write_text('人物：蓝衣少年', encoding='utf-8')
         self.library.import_folder(str(self.source))
-        self.assertEqual(len(self.library.all_entries()), 1)
-        self.assertIn('蓝衣', self.library.all_entries()[0]['text'])
+        self.assertEqual(len(self.library.all_entries()), 2)
+        self.assertTrue(any('蓝衣' in e['text'] for e in self.library.all_entries()))
+        package = next(iter(self.library.catalog['packages'].values()))
+        self.assertEqual(package['files']['角色(1).txt']['status'], 'missing')
         restored = PromptLibrary(self.builtin, self.root / 'private')
         self.assertEqual(restored.detail(restored.all_entries()[0]['id'])['text'], '人物：蓝衣少年')
 
@@ -44,7 +46,7 @@ class CatalogTests(unittest.TestCase):
         (self.source / '损坏.docx').write_bytes(b'partial')
         (self.source / '预览.png').write_bytes(b'image')
         report = self.library.import_folder(str(self.source))
-        self.assertEqual(len(report['issues']), 3)
+        self.assertEqual(len(report['issues']), 4)
         self.assertEqual(report['ignored_media'], 1)
         self.assertEqual(report['entries'], 0)
 

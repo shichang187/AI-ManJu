@@ -161,7 +161,10 @@ def make_entry(title, text, kind, source, source_label):
                      '模板参考', 'verified': False}
 
 
-class PromptLibrary:
+from .catalog_import import CatalogImportMixin
+
+
+class PromptLibrary(CatalogImportMixin):
     def __init__(self, builtin_path, private_dir):
         self.builtin = json.loads(Path(builtin_path).read_text(encoding='utf-8'))
         self.private_dir = Path(private_dir)
@@ -172,6 +175,8 @@ class PromptLibrary:
             self.catalog = json.loads(path.read_text(encoding='utf-8'))
         prefs = self.private_dir / 'preferences.json'
         self.favorites = json.loads(prefs.read_text(encoding='utf-8')).get('favorites', []) if prefs.exists() else []
+
+        self._init_import()
 
     def save_favorites(self, entry_ids):
         if not isinstance(entry_ids, list) or len(entry_ids) > 10000 or not all(isinstance(i, str) and len(i) <= 80 for i in entry_ids):
@@ -187,7 +192,7 @@ class PromptLibrary:
 
     def all_entries(self):
         with self.lock:
-            return self.builtin + list(self.catalog['entries'])
+            return self.builtin + list(self.catalog['entries']) + list(self.personal)
 
     def detail(self, entry_id):
         entry = next((e for e in self.all_entries() if e['id'] == entry_id), None)
@@ -222,67 +227,4 @@ class PromptLibrary:
                     'folder': self.catalog.get('folder', ''), 'favorites': list(self.favorites)}
 
     def import_folder(self, folder):
-        root = Path(folder).expanduser()
-        if not root.is_absolute() or not root.is_dir():
-            raise ValueError('请输入已下载资料的绝对文件夹路径')
-        root = root.resolve()
-        # Avoid accidentally importing this program's own private catalog or credential folders.
-        if root == Path(root.anchor) or any(p.lower() in ('.git', '.aws', '.ssh', '.codex') for p in root.parts):
-            raise ValueError('请选择具体的提示词资料文件夹')
-        with self.lock:
-            found, issues, ignored, files = {}, [], 0, 0
-            for path in sorted(root.rglob('*')):
-                if not path.is_file() or path.is_symlink() or any(p.startswith('.') for p in path.relative_to(root).parts):
-                    continue
-                rel = path.relative_to(root).as_posix()
-                if '.downloading' in path.name.lower() or path.suffix.lower() in ('.zip', '.rar', '.7z'):
-                    issues.append({'file': rel, 'reason': '下载未完成' if '.downloading' in path.name.lower() else
-                                   '压缩包请先解压'})
-                    continue
-                if path.suffix.lower() not in SUPPORTED:
-                    ignored += 1
-                    continue
-                try:
-                    before = path.stat()
-                    if before.st_size > LIMIT:
-                        raise ValueError('文件超过 32 MB 限制')
-                    if path.suffix.lower() == '.doc':
-                        derived = self.private_dir / 'extracted' / (hashlib.sha256(path.read_bytes()).hexdigest() + '.txt')
-                        if not derived.exists():
-                            raise ValueError('旧 Word .doc 请运行 scripts/convert_legacy_docs.ps1，或转换为 .docx')
-                        items = [(path.stem, decode_text(derived.read_bytes()), '资料原文')]
-                    else:
-                        items = read_entries(path)
-                    after = path.stat()
-                    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-                        raise ValueError('文件仍在写入，请稍后重新导入')
-                    if not any(text.strip() for _, text, _ in items):
-                        raise ValueError('未提取到文本，可能只有图片或空表格')
-                    files += 1
-                    for title, text, kind in items:
-                        if not text.strip():
-                            continue
-                        entry = make_entry(title, text, kind, rel, root.name)
-                        if entry['id'] in found:
-                            if entry['sources'][0] not in found[entry['id']]['sources']:
-                                found[entry['id']]['sources'].extend(entry['sources'])
-                        else:
-                            found[entry['id']] = entry
-                except Exception as exc:
-                    issues.append({'file': rel, 'reason': str(exc)[:200]})
-            # Preserve previously read material from files temporarily broken during download.
-            if self.catalog.get('folder') == str(root):
-                failed = {i['file'] for i in issues}
-                for old in self.catalog['entries']:
-                    if any(s['file'] in failed for s in old['sources']) and old['id'] not in found:
-                        found[old['id']] = old
-            report = {'read_files': files, 'entries': len(found), 'ignored_media': ignored, 'issues': issues,
-                      'time': time.strftime('%Y-%m-%d %H:%M:%S'),
-                      'primary': sum(e['stage'] != '扩展' for e in found.values())}
-            catalog = {'folder': str(root), 'entries': list(found.values()), 'report': report}
-            self.private_dir.mkdir(parents=True, exist_ok=True)
-            temp = self.private_dir / 'library.json.tmp'
-            temp.write_text(json.dumps(catalog, ensure_ascii=False), encoding='utf-8')
-            os.replace(temp, self.private_dir / 'library.json')
-            self.catalog = catalog
-            return report
+        return self._import_folder(folder)

@@ -403,7 +403,7 @@ def _build_shot(shot_id: int, template: dict, context: dict,
     }
 
 
-def _llm_expand(text: str, style: str) -> Optional[dict]:
+def _llm_expand(text: str, style: str, constraints=None) -> Optional[dict]:
     """可选：用 OpenAI 兼容接口做更高质量的扩写，失败时回退内置模板。"""
     api_key = os.getenv("EXPAND_LLM_API_KEY", "")
     base_url = os.getenv("EXPAND_LLM_BASE_URL", "")
@@ -417,7 +417,7 @@ def _llm_expand(text: str, style: str) -> Optional[dict]:
         '{"title":"标题","expanded_text":"扩写后的叙事","shots":'
         '[{"shot_type":"dialogue/action/empty","description":"画面描述",'
         '"duration":4,"dialogue":"台词或空","narration":"旁白或空"}]}\n'
-        f"风格：{style}\n内容：{text}"
+        f"风格：{style}\n内容：{text}\n完整约束：{json.dumps(constraints or {}, ensure_ascii=False)}"
     )
     payload = {
         "model": model or "doubao-seed-1-6-251015",
@@ -457,131 +457,24 @@ def build_storyboard(text: str, style: str = "通用",
     """
     短文本 → 扩写 → 分镜，输出可直接复制的豆包视频提示词包。
     """
-    text = text.strip()
-    if not text:
-        raise ValueError("请先输入故事内容")
-
-    min_sec = max(1, int(min_sec))
-    max_sec = max(min_sec, int(max_sec))
-    if not subject:
-        subject = _detect_subject(text)
-    if not character_desc:
-        character_desc = DEFAULT_CHAR_DESC
-
-    llm_result = _llm_expand(text, style)
-    if llm_result is not None:
-        expanded_text = llm_result.get("expanded_text") or expand_narrative(text, style, subject)
-        title = llm_result.get("title") or text[:16]
-        raw_shots = (llm_result.get("shots", []) or [])[:5]
-    else:
-        expanded_text = expand_narrative(text, style, subject)
-        title = text[:16]
-        raw_shots = None
-
-    if raw_shots is None:
-        templates = STYLE_SHOT_TEMPLATES.get(style, STYLE_SHOT_TEMPLATES["通用"])
-        count = min(5, max(1, int(target_shots or 5)))
-        if count > len(templates):
-            templates = templates + templates[: count - len(templates)]
-        templates = templates[:count]
-        raw_shots = []
-        for template in templates:
-            raw_shots.append({
-                "shot_type": template["shot_type"],
-                "description": template["description"],
-                "duration": None,
-                "dialogue": template.get("dialogue", ""),
-                "narration": template.get("narration", ""),
-                "camera": template.get("camera", "静态"),
-                "mood": template.get("mood", "平静"),
-            })
-
-    location = location.strip() or _detect(text, LOCATION_RULES, "城市角落")
-    mood = mood.strip() or _detect(text, MOOD_RULES, "平静")
-    time_of_day = time_of_day.strip() or (
-        "夜晚" if any(k in text for k in ("夜", "晚")) else (
-            "黄昏" if "黄昏" in text else "白天"
-        )
-    )
-    dialogue = _detect_dialogue(text)
-    environment_anchor = f"{time_of_day}，{location}"
-    context = {
-        "text": text,
-        "subject": subject,
-        "location": location,
-        "mood": mood,
-        "time": time_of_day,
-        "dialogue": dialogue,
-        "environment_anchor": environment_anchor,
-        "creative_point": creative_point,
-        "key_shot": key_shot,
-    }
-    expanded_text = f"{environment_anchor}。{expanded_text}"
-    if creative_point:
-        expanded_text = f"{expanded_text} 创意点：{creative_point}"
-    if key_shot:
-        expanded_text = f"{expanded_text} 画面重点：{key_shot}"
-
-    durations = _durations(len(raw_shots), min_sec, max_sec)
-    shots = []
-    for index, raw in enumerate(raw_shots, 1):
-        duration = int(raw.get("duration") or durations[index - 1])
-        duration = max(min_sec, min(max_sec, duration))
-
-        if "{" in str(raw.get("description", "")):
-            raw_desc = raw["description"].format(**context)
-        else:
-            raw_desc = raw.get("description", expanded_text)
-        shot_desc = raw_desc
-        if len(shot_desc) > 220:
-            shot_desc = shot_desc[:220]
-
-        shot_type = raw.get("shot_type", "dialogue")
-        if shot_type not in ("dialogue", "action", "empty"):
-            shot_type = "dialogue"
-
-        template = {
-            "shot_type": shot_type,
-            "description": shot_desc,
-            "camera": raw.get("camera", "静态"),
-            "mood": raw.get("mood", mood),
-            "narration": raw.get("narration", ""),
-        }
-        shots.append(
-            _build_shot(
-                index, template, context, duration, character_desc,
-                dialogue=raw.get("dialogue", ""),
-                creative_point=creative_point,
-                key_shot=key_shot,
-            )
-        )
-
-    return {
-        "title": title,
-        "input_text": text,
-        "expanded_text": expanded_text,
-        "character_desc": character_desc,
-        "environment_anchor": environment_anchor,
-        "creative_point": creative_point,
-        "key_shot": key_shot,
-        "global_base_prompt": DOUBAO_GLOBAL_BASE_PROMPT,
-        "negative_prompt": DOUBAO_NEGATIVE_PROMPT,
-        "shots": shots,
-    }
+    from .creative import build
+    return build(text, style, min_sec, max_sec, target_shots, subject, character_desc,
+                 location, time_of_day, mood, creative_point, key_shot)
 
 
 def save_storyboard(storyboard: dict, output_dir: str) -> str:
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, "storyboard.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(storyboard, f, ensure_ascii=False, indent=2)
+    from .project_store import atomic_json
+    atomic_json(path, storyboard)
     return path
 
 
 def create_project_folder(storyboard: dict, output_dir: str) -> str:
     """确认分镜后，在 output/browser 下创建该项目专属视频文件夹"""
     slug = re.sub(r'[\\/:*?"<>|\s]+', "_", storyboard.get("title", "project"))
-    slug = slug.strip("_")[:30] or "project"
+    import uuid
+    slug = (slug.strip("_")[:30] or "project") + "_" + uuid.uuid4().hex
     folder = os.path.join(output_dir, "browser", slug)
     os.makedirs(folder, exist_ok=True)
     save_storyboard(storyboard, folder)
@@ -613,16 +506,8 @@ def list_browser_videos(videos_dir: str) -> List[dict]:
 
 
 def get_video_duration(path: str) -> float:
-    try:
-        result = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries",
-             "format=duration", "-of",
-             "default=noprint_wrappers=1:nokey=1", path],
-            capture_output=True, text=True, timeout=10,
-        )
-        return max(0.1, float(result.stdout.strip()))
-    except Exception:
-        return 5.0
+    from .media_export import probe
+    return probe(path)['duration']
 
 
 def compose_browser_video(storyboard_path: str, videos_dir: str,
@@ -632,64 +517,12 @@ def compose_browser_video(storyboard_path: str, videos_dir: str,
     """
     把浏览器豆包生成的视频按分镜顺序合成最终视频。
     """
-    def report(step: str, percent: int):
-        if progress_callback is not None:
-            progress_callback(step, percent)
-
-    report("读取分镜脚本", 5)
-    with open(storyboard_path, "r", encoding="utf-8") as f:
-        storyboard = json.load(f)
-    report("扫描项目视频", 15)
-    videos = list_browser_videos(videos_dir)
-    shots = storyboard.get("shots", [])
-
-    if not videos:
-        raise RuntimeError("项目视频文件夹中没有找到视频文件，请先放入 1.mp4、2.mp4 等视频")
-
-    timeline = []
-    current = 0.0
-    report("读取视频时长", 30)
-    total_shots = max(len(shots), 1)
-    total_videos = len(videos)
-    for index, video in enumerate(videos, 1):
-        start_idx = round((index - 1) * total_shots / total_videos)
-        end_idx = round(index * total_shots / total_videos)
-        group = shots[start_idx:end_idx]
-        duration = get_video_duration(video["path"])
-        timeline.append({
-            "start_time": current,
-            "end_time": current + duration,
-            "duration": duration,
-            "video_path": video["path"],
-            "audio_path": "",
-            "scene_id": 1,
-            "shot_id": index,
-            "narration": " ".join(
-                shot.get("narration", "") for shot in group if shot.get("narration")
-            ).strip(),
-            "dialogue": " ".join(
-                shot.get("dialogue", "") for shot in group if shot.get("dialogue")
-            ).strip(),
-            "speaker": group[0].get("speaker", "") if group else "",
-            "mood": group[0].get("mood", "") if group else "",
-            "description": group[0].get("description", "") if group else "",
-        })
-        current += duration
-
-    report("拼接视频与保留声音", 55)
-    composer = VideoComposer(
-        output_dir=output_dir,
-        bgm_dir=os.path.dirname(bgm_path) if bgm_path else "",
-        font_path="",
-    )
-    final_path = os.path.join(output_dir, "browser", "final_video.mp4")
-    os.makedirs(os.path.dirname(final_path), exist_ok=True)
-    final = composer.compose(
-        timeline=timeline,
-        output_path=final_path,
-        bgm_path=bgm_path,
-        bgm_volume=bgm_volume,
-        preserve_source_audio=True,
-    )
-    report("合成完成", 100)
-    return final
+    import uuid
+    from pathlib import Path
+    from .project_store import validate_storyboard
+    from .media_export import snapshot, export
+    storyboard = validate_storyboard(json.loads(Path(storyboard_path).read_text(encoding="utf-8")))
+    record = {"project_id": Path(videos_dir).name, "revision": 1, "storyboard": storyboard, "bindings": []}
+    task = Path(output_dir) / "browser" / "exports" / uuid.uuid4().hex
+    snap = snapshot(record, videos_dir, task, bgm_path)
+    return export(snap, task, {"bgm_volume": bgm_volume}, progress_callback or (lambda *_: None))

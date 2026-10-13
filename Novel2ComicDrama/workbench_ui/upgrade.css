@@ -1,0 +1,11 @@
+[hidden] { display:none !important; }
+.work-tabs {display:flex; gap:12px; position:sticky; top:0; z-index:3; background:#f8fafc; padding:12px 0;}
+.work-tabs [aria-pressed=true] {background:#1f2937; color:white;}
+textarea, select {max-width:100%; box-sizing:border-box;}
+.shot-body label, #bindingRows label {display:block; margin:12px 0; font-weight:600;}
+.shot-body textarea, .shot-body input, #modelHandoff textarea, #characterProfiles, #sceneProfiles, #groupBindings {display:block; width:100%; margin-top:6px; padding:10px; border:1px solid #ccd3dd; border-radius:8px; font:inherit; background:#fff;}
+#projects {min-width:180px; max-width:100%;} #saveFeedback,#assetFeedback,#modelFeedback {white-space:pre-wrap;overflow-wrap:anywhere;}
+#modelFeedback {max-height:320px; overflow:auto;} #plannedSubtitles {width:auto;}
+.shot-head {flex-wrap:wrap;} .shot-body {overflow-wrap:anywhere;}
+.shot-line,.project-box,.result {overflow-wrap:anywhere;word-break:break-word;}
+@media(max-width:600px) {main{padding:12px !important;} .work-tabs button{flex:1;} .actions{flex-wrap:wrap;} .shot-head button{font-size:13px;} select{width:100%;} .grid {grid-template-columns:1fr !important;}}

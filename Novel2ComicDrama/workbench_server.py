@@ -1,386 +1,332 @@
-#!/usr/bin/env python3
-"""
-workbench_server.py — 双击启动的本地漫剧工作台
-
-启动后会自动打开浏览器，提供：
-  短文本扩写分镜、一键复制提示词、视频文件列表、一键合成最终视频。
-"""
-
+"""Loopback-only Python/HTML workbench, atomic projects and checked exports."""
+import copy
 import json
 import os
+from pathlib import Path
+import queue
+import secrets
 import socket
 import sys
 import threading
-import time
+import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-
 ROOT = os.path.dirname(os.path.abspath(__file__))
-UI_DIR = os.path.join(ROOT, "workbench_ui")
-OUTPUT_ROOT = os.environ.get("AIMANJU_OUTPUT_DIR", os.path.join(ROOT, "output"))
-OUTPUT_DIR = os.path.join(OUTPUT_ROOT, "browser")
-VIDEOS_DIR = os.path.join(OUTPUT_ROOT, "browser_videos")
-STORYBOARD_PATH = os.path.join(OUTPUT_DIR, "storyboard.json")
-STATE_PATH = os.path.join(OUTPUT_DIR, "session_state.json")
-
-SESSION = {
-    "storyboard": None,
-    "project_folder": "",
-    "project_opened": False,
-    "inputs": {},
-    "profile": {},
-}
+UI_DIR = os.path.join(ROOT, 'workbench_ui')
+OUTPUT_ROOT = os.environ.get('AIMANJU_OUTPUT_DIR', os.path.join(ROOT, 'output'))
+OUTPUT_DIR = os.path.join(OUTPUT_ROOT, 'browser')
+VIDEOS_DIR = os.path.join(OUTPUT_ROOT, 'browser_videos')
+STORYBOARD_PATH = os.path.join(OUTPUT_DIR, 'storyboard.json')
+STATE_PATH = os.path.join(OUTPUT_DIR, 'session_state.json')
+TASK_PATH = os.path.join(OUTPUT_DIR, 'tasks.json')
+SESSION_KEY = secrets.token_urlsafe(32)
+STATE_LOCK = threading.RLock()
+SESSION = {'storyboard': None, 'project_id': '', 'project_folder': '', 'project_opened': False,
+           'inputs': {}, 'profile': {}, 'interview': {'answers': {}, 'done': False}}
 COMPOSE_TASKS = {}
-
+QUEUES = {}
 sys.path.insert(0, ROOT)
-
 from modules.prompt_library import PromptLibrary
+from modules.browser_workflow import build_storyboard, save_storyboard
+from modules.project_store import ProjectStore, atomic_json, bounded, validate_storyboard
+from modules.media_export import scan, snapshot, export, OPEN_TYPES
 
-PROMPTS = PromptLibrary(
-    os.path.join(ROOT, "data", "prompts", "builtin.json"),
-    os.environ.get("AIMANJU_PRIVATE_DATA_DIR", os.path.join(ROOT, "data", "private")),
-)
+STORE = ProjectStore(OUTPUT_DIR)
+PROMPTS = PromptLibrary(os.path.join(ROOT, 'data', 'prompts', 'builtin.json'),
+                       os.environ.get('AIMANJU_PRIVATE_DATA_DIR', os.path.join(ROOT, 'data', 'private')))
 
-from modules.browser_workflow import (  # noqa: E402
-    build_storyboard,
-    compose_browser_video,
-    create_project_folder,
-    list_browser_videos,
-    save_storyboard,
-)
+def resolve_project_path(value):
+    return os.path.realpath(value if os.path.isabs(value) else os.path.join(ROOT, value)) if value else ''
 
+def project_relative(path):
+    try:
+        return os.path.relpath(os.path.realpath(path), ROOT).replace('\\', '/')
+    except ValueError:
+        return os.path.realpath(path).replace('\\', '/')
 
-def load_session_state():
-    if os.path.exists(STATE_PATH):
-        try:
-            with open(STATE_PATH, "r", encoding="utf-8") as f:
-                saved = json.load(f)
-            if isinstance(saved, dict):
-                SESSION.update(saved)
-        except Exception:
-            pass
-
+def apply_record(record):
+    SESSION.update({k: copy.deepcopy(record[k]) for k in ('storyboard', 'inputs', 'profile', 'interview')})
+    SESSION.update(project_id=record['project_id'], revision=record['revision'],
+                   project_folder=project_relative(STORE.media_folder(record)), bindings=record['bindings'])
 
 def save_session_state():
-    os.makedirs(os.path.dirname(STATE_PATH) or ".", exist_ok=True)
-    with open(STATE_PATH, "w", encoding="utf-8") as f:
-        json.dump(SESSION, f, ensure_ascii=False, indent=2)
+    atomic_json(STATE_PATH, SESSION)
 
-
-def resolve_project_path(value: str) -> str:
-    """把相对项目的路径解析为绝对路径，保证项目迁移后仍可定位。"""
-    if not value:
-        return ""
-    path = value if os.path.isabs(value) else os.path.join(ROOT, value)
-    return os.path.realpath(path)
-
-
-def project_relative(path: str) -> str:
-    """把绝对路径转成相对项目根目录的便携路径。"""
-    try:
-        return os.path.relpath(os.path.realpath(path), ROOT).replace("\\", "/")
-    except ValueError:
-        # 不同盘符无法计算相对路径时，退回绝对路径
-        return os.path.realpath(path).replace("\\", "/")
-
+def load_session_state():
+    with STATE_LOCK:
+        if Path(STATE_PATH).exists():
+            SESSION.update(json.loads(Path(STATE_PATH).read_text(encoding='utf-8')))
+            if SESSION.get('project_id'):
+                apply_record(STORE.load(SESSION['project_id']))
+        if Path(TASK_PATH).exists():
+            COMPOSE_TASKS.update(json.loads(Path(TASK_PATH).read_text(encoding='utf-8')))
+            changed = False
+            for task in COMPOSE_TASKS.values():
+                if task['status'] in ('queued', 'running'):
+                    task.update(status='interrupted', step='服务重启，任务已中断；可重新导出')
+                    changed = True
+            if changed:
+                atomic_json(TASK_PATH, COMPOSE_TASKS)
 
 load_session_state()
 
-
-def find_free_port(start: int = 8765, tries: int = 10) -> int:
-    for port in range(start, start + tries):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            try:
-                sock.bind(("127.0.0.1", port))
-                return port
-            except OSError:
-                continue
-    # 固定端口被系统保留时，改用系统随机分配的临时端口
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
+def find_free_port(start=8765, tries=10):
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
         return sock.getsockname()[1]
 
+def task_update(tid, **fields):
+    with STATE_LOCK:
+        COMPOSE_TASKS[tid].update(fields)
+        atomic_json(TASK_PATH, COMPOSE_TASKS)
+
+def queue_export(pid, tid, snapshot_path, folder, settings):
+    if pid not in QUEUES:
+        jobs = QUEUES[pid] = queue.Queue()
+        def worker():
+            while True:
+                task_id, snap, task_folder, opts = jobs.get()
+                try:
+                    task_update(task_id, status='running', step='开始合成')
+                    final = export(snap, task_folder, opts,
+                                   lambda step, percent: task_update(task_id, step=step, progress=percent))
+                    task_update(task_id, status='done', progress=100, step='合成完成',
+                                final_path=project_relative(final))
+                except Exception as exc:
+                    task_update(task_id, status='error', step='合成失败', error=str(exc))
+                finally:
+                    jobs.task_done()
+        threading.Thread(target=worker, daemon=True).start()
+    QUEUES[pid].put((tid, snapshot_path, folder, copy.deepcopy(settings)))
 
 class WorkbenchHandler(BaseHTTPRequestHandler):
-    server_version = "Novel2ComicDrama/0.5"
-
-    def log_message(self, format, *args):
+    server_version = 'Novel2ComicDrama/0.6'
+    def log_message(self, *_):
         pass
-
-    def _send_json(self, code: int, payload: dict):
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    def _send_json(self, code, payload):
+        self._send(code, json.dumps(payload, ensure_ascii=False).encode('utf-8'), 'application/json; charset=utf-8')
+    def _send(self, code, body, content_type):
         self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        for k, v in [('Content-Type', content_type), ('Content-Length', str(len(body))),
+                     ('Cache-Control', 'no-store'), ('X-Content-Type-Options', 'nosniff'),
+                     ('Content-Security-Policy', "frame-ancestors 'none'; object-src 'none'; base-uri 'self'")]:
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
-
-    def _read_json(self) -> dict:
-        length = int(self.headers.get("Content-Length", 0) or 0)
-        if length <= 0:
-            return {}
-        return json.loads(self.rfile.read(length).decode("utf-8"))
-
-    def _serve_index(self):
-        path = os.path.join(UI_DIR, "index.html")
-        if not os.path.exists(path):
-            self._send_json(500, {"error": "未找到工作台页面"})
-            return
-        with open(path, "rb") as f:
-            body = f.read()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
+    def _guard(self, write=False):
+        host = self.headers.get('Host', '')
+        port = self.server.server_address[1]
+        if host not in (f'127.0.0.1:{port}', f'localhost:{port}'):
+            raise PermissionError('请通过本机地址访问工作台')
+        origin = self.headers.get('Origin')
+        if (origin and origin != 'http://' + host) or self.headers.get('Sec-Fetch-Site') == 'cross-site':
+            raise PermissionError('请在本地工作台操作')
+        if write:
+            if not secrets.compare_digest(self.headers.get('X-Workbench-Session', ''), SESSION_KEY):
+                raise PermissionError('会话已变化，请刷新工作台')
+            if self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
+                raise ValueError('请求必须使用 application/json')
+    def _read_json(self):
+        length = int(self.headers.get('Content-Length', 0))
+        if not 0 < length <= 4 * 1024 * 1024:
+            raise ValueError('请求大小不合法')
+        value = json.loads(self.rfile.read(length).decode('utf-8'))
+        if not isinstance(value, dict):
+            raise ValueError('请求必须是 JSON 对象')
+        return value
+    def _current(self, data=None):
+        pid = (data or {}).get('project_id', SESSION.get('project_id'))
+        if not pid:
+            raise ValueError('请先创建或打开项目')
+        if pid != SESSION.get('project_id'):
+            raise ValueError('当前项目已变化，请重新打开项目')
+        return STORE.load(pid)
     def do_GET(self):
-        path = urlparse(self.path).path
-        if path in ("/", "/index.html"):
-            self._serve_index()
-        elif path in ("/assets/prompt-library.js", "/assets/prompt-library.css"):
-            filename = path.rsplit("/", 1)[1]
-            with open(os.path.join(UI_DIR, filename), "rb") as f:
-                body = f.read()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/javascript; charset=utf-8" if filename.endswith(".js") else "text/css; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif path in ("/api/prompts", "/api/prompts/detail"):
-            try:
-                params = parse_qs(urlparse(self.path).query)
-                data = PROMPTS.detail(params.get("id", [""])[0]) if path.endswith("/detail") else PROMPTS.query(params)
-                self._send_json(200, data)
-            except (ValueError, KeyError) as exc:
-                self._send_json(400, {"error": str(exc)})
-        elif path == "/api/health":
-            self._send_json(200, {"ok": True})
-        elif path == "/api/videos":
-            project_folder = SESSION.get("project_folder")
-            if not project_folder:
-                self._send_json(200, {
-                    "videos": [],
-                    "videos_dir": "",
-                    "count": 0,
-                    "need_project": True,
-                })
-                return
-            videos_dir = resolve_project_path(project_folder)
-            videos = list_browser_videos(videos_dir)
-            self._send_json(200, {
-                "videos": videos,
-                "videos_dir": project_relative(videos_dir),
-                "count": len(videos),
-                "project_opened": bool(SESSION.get("project_opened")),
-            })
-        elif path == "/api/state":
-            self._send_json(200, {"state": SESSION})
-        elif path == "/api/compose-progress":
-            params = parse_qs(urlparse(self.path).query)
-            task_id = (params.get("task_id") or [""])[0]
-            task = COMPOSE_TASKS.get(task_id)
-            if not task:
-                self._send_json(404, {"error": "任务不存在"})
-            else:
-                self._send_json(200, task)
-        elif path == "/favicon.ico":
-            self.send_response(204)
-            self.end_headers()
-        else:
-            self._send_json(404, {"error": "接口不存在"})
-
-    def do_POST(self):
-        path = urlparse(self.path).path
         try:
-            if path in ("/api/prompts/import", "/api/prompts/favorites"):
-                # Import is only callable from this local workbench, not another website.
-                origin = self.headers.get("Origin", "")
-                expected = "http://" + self.headers.get("Host", "")
-                if (origin and origin != expected) or self.headers.get("Sec-Fetch-Site") == "cross-site":
-                    self._send_json(403, {"error": "请在本地工作台操作资料库"})
-                    return
-                data = self._read_json()
-                self._send_json(200, PROMPTS.save_favorites(data.get("favorites", [])) if path.endswith("/favorites") else
-                                PROMPTS.import_folder(str(data.get("folder", ""))))
-            elif path == "/api/expand":
-                data = self._read_json()
-                storyboard = build_storyboard(
-                    text=data.get("text", ""),
-                    style=data.get("style", "通用"),
-                    min_sec=int(data.get("min_sec", 3)),
-                    max_sec=int(data.get("max_sec", 6)),
-                    target_shots=int(data.get("target_shots", 0)),
-                    subject=data.get("subject", ""),
-                    character_desc=data.get("character_desc", ""),
-                    location=data.get("location", ""),
-                    time_of_day=data.get("time_of_day", ""),
-                    mood=data.get("mood", ""),
-                    creative_point=data.get("creative_point", ""),
-                    key_shot=data.get("key_shot", ""),
-                )
-                storyboard_path = save_storyboard(storyboard, OUTPUT_DIR)
-                SESSION["storyboard"] = storyboard
-                SESSION["inputs"] = {
-                    "text": data.get("text", ""),
-                    "style": data.get("style", "通用"),
-                    "subject": data.get("subject", ""),
-                    "character_desc": data.get("character_desc", ""),
-                    "location": data.get("location", ""),
-                    "time_of_day": data.get("time_of_day", ""),
-                    "mood": data.get("mood", ""),
-                    "creative_point": data.get("creative_point", ""),
-                    "key_shot": data.get("key_shot", ""),
-                }
-                save_session_state()
-                self._send_json(200, {
-                    "storyboard": storyboard,
-                    "storyboard_path": storyboard_path,
-                })
-            elif path == "/api/save-storyboard":
-                storyboard = self._read_json()
-                storyboard_path = save_storyboard(storyboard, OUTPUT_DIR)
-                SESSION["storyboard"] = storyboard
-                save_session_state()
-                self._send_json(200, {"storyboard_path": storyboard_path})
-            elif path == "/api/state":
-                data = self._read_json()
-                state = data.get("state", data)
-                if isinstance(state, dict):
-                    SESSION.update(state)
-                    save_session_state()
-                self._send_json(200, {"ok": True})
-            elif path == "/api/reset":
-                SESSION.clear()
-                SESSION.update({
-                    "storyboard": None,
-                    "project_folder": "",
-                    "project_opened": False,
-                    "inputs": {},
-                    "profile": {},
-                    "interview": {"answers": {}, "done": False},
-                })
-                save_session_state()
-                self._send_json(200, {"ok": True})
-            elif path == "/api/create-project":
-                data = self._read_json()
-                storyboard = data.get("storyboard") or SESSION.get("storyboard")
-                if not storyboard:
-                    self._send_json(400, {"error": "请先生成分镜"})
-                    return
-                folder = create_project_folder(storyboard, os.path.dirname(OUTPUT_DIR))
-                folder_rel = project_relative(folder)
-                SESSION["project_folder"] = folder_rel
-                SESSION["project_opened"] = False
-                SESSION["storyboard"] = storyboard
-                save_session_state()
-                self._send_json(200, {
-                    "project_folder": folder_rel,
-                    "message": "项目文件夹已创建",
-                })
-            elif path == "/api/open-folder":
-                data = self._read_json()
-                folder = resolve_project_path(
-                    data.get("folder") or SESSION.get("project_folder")
-                )
-                if not folder or not os.path.isdir(folder):
-                    self._send_json(400, {"error": "项目文件夹不存在"})
-                    return
-                browser_root = resolve_project_path(OUTPUT_DIR)
-                if os.path.commonpath([folder, browser_root]) != browser_root:
-                    self._send_json(400, {"error": "文件夹路径不合法"})
-                    return
-                os.startfile(folder)
-                SESSION["project_opened"] = True
-                save_session_state()
-                self._send_json(200, {
-                    "ok": True,
-                    "project_folder": project_relative(folder),
-                })
-            elif path == "/api/open-file":
-                data = self._read_json()
-                file_path = resolve_project_path(data.get("path", ""))
-                output_root = resolve_project_path(os.path.dirname(OUTPUT_DIR))
-                if not file_path or not os.path.isfile(file_path):
-                    self._send_json(400, {"error": "视频文件不存在"})
-                    return
-                if os.path.commonpath([file_path, output_root]) != output_root:
-                    self._send_json(400, {"error": "文件路径不合法"})
-                    return
-                os.startfile(file_path)
-                self._send_json(200, {"ok": True})
-            elif path == "/api/compose":
-                data = self._read_json()
-                project_folder = SESSION.get("project_folder")
-                if not project_folder or not SESSION.get("project_opened"):
-                    self._send_json(400, {
-                        "error": "请先确定分镜无误并打开视频文件夹",
-                    })
-                    return
-                project_abs = resolve_project_path(project_folder)
-                storyboard_path = os.path.join(project_abs, "storyboard.json")
-                videos_dir = project_abs
-                if not os.path.exists(storyboard_path):
-                    self._send_json(400, {"error": "项目分镜文件不存在"})
-                    return
-                task_id = f"compose_{int(time.time() * 1000)}"
-                COMPOSE_TASKS[task_id] = {
-                    "status": "running",
-                    "progress": 0,
-                    "step": "排队中",
-                }
-
-                def worker():
-                    def report(step, percent):
-                        COMPOSE_TASKS[task_id] = {
-                            "status": "running",
-                            "progress": percent,
-                            "step": step,
-                        }
-                    try:
-                        final_path = compose_browser_video(
-                            storyboard_path=storyboard_path,
-                            videos_dir=videos_dir,
-                            output_dir=os.path.dirname(OUTPUT_DIR),
-                            bgm_path=data.get("bgm_path", ""),
-                            bgm_volume=float(data.get("bgm_volume", 0.15)),
-                            progress_callback=report,
-                        )
-                        COMPOSE_TASKS[task_id] = {
-                            "status": "done",
-                            "progress": 100,
-                            "step": "合成完成",
-                            "final_path": project_relative(final_path),
-                        }
-                    except Exception as e:
-                        COMPOSE_TASKS[task_id] = {
-                            "status": "error",
-                            "step": "合成失败",
-                            "error": str(e),
-                        }
-
-                threading.Thread(target=worker, daemon=True).start()
-                self._send_json(200, {"task_id": task_id})
+            self._guard()
+            path = urlparse(self.path).path
+            params = parse_qs(urlparse(self.path).query)
+            if path in ('/', '/index.html'):
+                body = Path(UI_DIR, 'index.html').read_text(encoding='utf-8')
+                body = body.replace('</head>', '<meta name="workbench-session" content="' + SESSION_KEY + '"></head>')
+                return self._send(200, body.encode('utf-8'), 'text/html; charset=utf-8')
+            if path.startswith('/assets/'):
+                name = path.rsplit('/', 1)[1]
+                if name not in ('prompt-library.js', 'prompt-library.css', 'upgrade.js', 'upgrade.css'):
+                    raise ValueError('资源不存在')
+                return self._send(200, Path(UI_DIR, name).read_bytes(),
+                                  'text/javascript; charset=utf-8' if name.endswith('.js') else 'text/css; charset=utf-8')
+            if path == '/favicon.ico':
+                return self._send(204, b'', 'image/x-icon')
+            if path == '/api/health':
+                result = {'ok': True, 'version': '0.6.0'}
+            elif path in ('/api/prompts', '/api/prompts/detail'):
+                result = PROMPTS.detail(params.get('id', [''])[0]) if path.endswith('/detail') else PROMPTS.query(params)
+            elif path == '/api/projects':
+                result = {'projects': STORE.listing()}
+            elif path == '/api/project-history':
+                r = self._current()
+                revisions = STORE.folder(r['project_id']) / 'revisions'
+                result = {'revisions': sorted([int(p.stem) for p in revisions.glob('*.json')], reverse=True),
+                          'revision': r['revision']}
+            elif path == '/api/state':
+                with STATE_LOCK:
+                    if SESSION.get('project_id'):
+                        apply_record(STORE.load(SESSION['project_id']))
+                    result = {'state': copy.deepcopy(SESSION), 'tasks': copy.deepcopy(COMPOSE_TASKS)}
+            elif path == '/api/videos':
+                if not SESSION.get('project_id'):
+                    result = {'videos': [], 'count': 0, 'videos_dir': '', 'need_project': True, 'issues': []}
+                else:
+                    r = self._current()
+                    folder = STORE.media_folder(r)
+                    result = scan(r, folder, params.get('probe') == ['1'])
+                    result['videos_dir'] = project_relative(folder)
+            elif path == '/api/tasks':
+                result = {'tasks': list(copy.deepcopy(COMPOSE_TASKS).values())}
+            elif path == '/api/compose-progress':
+                result = COMPOSE_TASKS.get(params.get('task_id', [''])[0])
+                if result is None:
+                    return self._send_json(404, {'error': '任务不存在'})
+            elif path == '/api/prompts/import-progress':
+                result = PROMPTS.import_status()
             else:
-                self._send_json(404, {"error": "接口不存在"})
-        except (ValueError, KeyError) as e:
-            self._send_json(400, {"error": str(e)})
-        except Exception as e:
-            self._send_json(500, {"error": str(e)})
-
+                return self._send_json(404, {'error': '接口不存在'})
+            self._send_json(200, result)
+        except PermissionError as exc:
+            self._send_json(403, {'error': str(exc)})
+        except (ValueError, KeyError, OSError) as exc:
+            self._send_json(400, {'error': str(exc)})
+    def do_POST(self):
+        try:
+            self._guard(write=True)
+            path = urlparse(self.path).path
+            data = self._read_json()
+            with STATE_LOCK:
+                if path == '/api/prompts/import':
+                    result = PROMPTS.start_import(str(data.get('folder', '')))
+                elif path == '/api/prompts/favorites':
+                    result = PROMPTS.save_favorites(data.get('favorites', []))
+                elif path == '/api/prompts/personal':
+                    result = PROMPTS.save_personal(data)
+                elif path == '/api/prompts/undo-import':
+                    result = PROMPTS.undo_import()
+                elif path == '/api/expand':
+                    args = {k: data[k] for k in ('text', 'style', 'min_sec', 'max_sec', 'target_shots',
+                            'subject', 'character_desc', 'location', 'time_of_day', 'mood', 'creative_point', 'key_shot') if k in data}
+                    sb = build_storyboard(**args)
+                    SESSION.update(storyboard=sb, project_id='', project_folder='', project_opened=False,
+                                   inputs=data, profile=data.get('profile', {}))
+                    save_session_state()
+                    result = {'storyboard': sb, 'storyboard_path': ''}
+                elif path == '/api/save-storyboard':
+                    sb = validate_storyboard(data.get('storyboard', data))
+                    if SESSION.get('project_id'):
+                        record = self._current(data)
+                        apply_record(STORE.save(record['project_id'], storyboard=sb, expected=data.get('revision')))
+                        dest = STORE.folder(record['project_id'])
+                    else:
+                        SESSION['storyboard'] = sb
+                        dest = Path(OUTPUT_DIR)
+                        save_storyboard(sb, str(dest))
+                    save_session_state()
+                    result = {'storyboard_path': project_relative(dest / 'storyboard.json'),
+                              'revision': SESSION.get('revision'), 'storyboard': SESSION['storyboard']}
+                elif path == '/api/state':
+                    state = data.get('state', data)
+                    if not isinstance(state, dict):
+                        raise ValueError('state 必须为对象')
+                    if data.get('project_id') and data['project_id'] != SESSION.get('project_id'):
+                        raise ValueError('当前项目已变化，请重新打开项目')
+                    fields = {k: state[k] for k in ('inputs', 'profile', 'interview') if k in state}
+                    if SESSION.get('project_id'):
+                        record = self._current(data)
+                        apply_record(STORE.save(record['project_id'], **fields))
+                    else:
+                        SESSION.update(fields)
+                    save_session_state()
+                    result = {'ok': True, 'revision': SESSION.get('revision')}
+                elif path == '/api/reset':
+                    SESSION.clear()
+                    SESSION.update(storyboard=None, project_id='', project_folder='', project_opened=False,
+                                   inputs={}, profile={}, interview={'answers': {}, 'done': False})
+                    save_session_state()
+                    result = {'ok': True}
+                elif path == '/api/create-project':
+                    record = STORE.create(data.get('storyboard') or SESSION.get('storyboard'),
+                                          inputs=SESSION.get('inputs'), profile=SESSION.get('profile'),
+                                          interview=SESSION.get('interview'))
+                    apply_record(record)
+                    SESSION['project_opened'] = False
+                    save_session_state()
+                    result = {'project_id': record['project_id'], 'revision': record['revision'],
+                              'project_folder': SESSION['project_folder']}
+                elif path == '/api/select-project':
+                    record = STORE.migrate(Path(OUTPUT_DIR) / data['legacy_folder']) if data.get('legacy_folder') else STORE.load(data['project_id'])
+                    apply_record(record)
+                    SESSION['project_opened'] = False
+                    save_session_state()
+                    result = {'state': copy.deepcopy(SESSION)}
+                elif path == '/api/restore-project':
+                    record = self._current(data)
+                    apply_record(STORE.restore(record['project_id'], data['revision']))
+                    save_session_state()
+                    result = {'state': copy.deepcopy(SESSION)}
+                elif path == '/api/bind-assets':
+                    record = self._current(data)
+                    candidate = {**record, 'bindings': data['bindings']}
+                    inventory = scan(candidate, STORE.media_folder(record))
+                    if inventory['issues']:
+                        raise ValueError('；'.join(i['reason'] for i in inventory['issues']))
+                    apply_record(STORE.save(record['project_id'], bindings=inventory['bindings']))
+                    save_session_state()
+                    result = inventory
+                elif path in ('/api/open-folder', '/api/open-file'):
+                    record = self._current(data)
+                    if path.endswith('folder'):
+                        folder = STORE.media_folder(record)
+                        requested = data.get('folder')
+                        if requested and Path(resolve_project_path(requested)) != folder:
+                            raise ValueError('只能打开当前项目目录')
+                        os.startfile(str(folder))
+                        SESSION['project_opened'] = True
+                        save_session_state()
+                    else:
+                        target = bounded(resolve_project_path(data.get('path', '')), OUTPUT_ROOT)
+                        if not target.is_file() or target.suffix.lower() not in OPEN_TYPES:
+                            raise ValueError('只允许打开工作台媒体文件或字幕')
+                        os.startfile(str(target))
+                    result = {'ok': True}
+                elif path == '/api/compose':
+                    record = self._current(data)
+                    tid = 'compose_' + uuid.uuid4().hex
+                    folder = STORE.folder(record['project_id']) / 'exports' / tid
+                    snap = snapshot(record, STORE.media_folder(record), folder, data.get('bgm_path', ''))
+                    COMPOSE_TASKS[tid] = {'task_id': tid, 'project_id': record['project_id'],
+                                         'revision': record['revision'], 'status': 'queued', 'progress': 0, 'step': '排队中'}
+                    atomic_json(TASK_PATH, COMPOSE_TASKS)
+                    queue_export(record['project_id'], tid, snap, folder, data)
+                    result = {'task_id': tid}
+                else:
+                    return self._send_json(404, {'error': '接口不存在'})
+            self._send_json(200, result)
+        except PermissionError as exc:
+            self._send_json(403, {'error': str(exc)})
+        except (ValueError, KeyError, TypeError) as exc:
+            self._send_json(400, {'error': str(exc)})
+        except Exception as exc:
+            self._send_json(500, {'error': str(exc)})
 
 def main():
-    server = ThreadingHTTPServer(("127.0.0.1", 0), WorkbenchHandler)
-    url = f"http://127.0.0.1:{server.server_address[1]}/"
-    threading.Timer(0.8, lambda: webbrowser.open(url)).start()
-    print("=" * 56)
-    print("  AI漫剧工作台已启动")
-    print(f"  浏览器地址: {url}")
-    print("  关闭此窗口即可停止服务")
-    print("=" * 56)
+    from modules.media_export import run
+    for name in ('ffmpeg', 'ffprobe'):
+        run([name, '-version'], timeout=15)
+    server = ThreadingHTTPServer(('127.0.0.1', 0), WorkbenchHandler)
+    url = f'http://127.0.0.1:{server.server_address[1]}/'
+    threading.Timer(.8, lambda: webbrowser.open(url)).start()
+    print('AI漫剧工作台 0.6.0 已启动：' + url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -388,6 +334,5 @@ def main():
     finally:
         server.server_close()
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
