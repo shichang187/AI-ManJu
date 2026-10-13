@@ -2,3 +2,11 @@
 *.pyc
 Thumbs.db
 .DS_Store
+
+# Local prompt collections and runtime state (never publish imported originals)
+Novel2ComicDrama/data/private/
+Novel2ComicDrama/output/
+*.downloading
+.env
+.env.*
+!.env.example

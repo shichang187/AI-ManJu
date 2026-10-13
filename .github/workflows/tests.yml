@@ -1,0 +1,16 @@
+name: Workbench tests
+on: [push, pull_request]
+jobs:
+  tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.10', '3.12']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run isolated parser and API regression tests
+        run: python -B -m unittest discover -s Novel2ComicDrama/tests -v

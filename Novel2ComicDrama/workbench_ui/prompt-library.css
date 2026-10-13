@@ -1,0 +1,35 @@
+#promptLibrary {padding:0;overflow:hidden;border:1px solid #dcd9d1;margin-bottom:22px;scroll-margin-top:75px}
+#promptLibrary * {box-sizing:border-box}
+.pl-heading {background:#142c32;color:#fff;padding:30px 28px;display:flex;justify-content:space-between;align-items:flex-start;gap:20px}
+.pl-eyebrow {font-size:11px;letter-spacing:2px;line-height:1.8;color:#a98c4b;font-weight:700}
+.pl-heading .pl-eyebrow {color:#d9b976}.pl-heading h2 {color:#fff;font-size:25px;margin:9px 0 8px;font-weight:600}
+.pl-heading p {color:#c4d3d3;margin:0;font-size:13px}.pl-local {border:1px solid #587173;border-radius:3px;padding:7px 12px;font-size:12px;white-space:nowrap}
+.pl-content {padding:22px 28px;background:#faf9f5}.pl-topline {display:flex;justify-content:space-between;align-items:center;gap:12px}
+#plStats {font-size:12px;color:#526269;margin:0}.pl-search {display:flex;gap:9px;margin:15px 0}.pl-search input {flex:1;min-width:0;margin:0}
+.pl-stages {display:flex;flex-wrap:wrap;gap:7px;margin:16px 0 22px}
+#promptLibrary .pl-stage {background:transparent;color:#465658;border:1px solid #deddd7;padding:7px 13px;font-size:12px;border-radius:4px}
+#promptLibrary .pl-stage.active {background:#203d43;border-color:#203d43;color:#fff}
+.pl-cards {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.pl-card {background:#fff;border:1px solid #deded5;padding:17px;display:flex;flex-direction:column;border-radius:5px;transition:border-color .15s}
+.pl-card:hover {border-color:#b08d4c}.pl-card-top {display:flex;justify-content:space-between;align-items:center;color:#8c7545;font-size:11px;gap:5px}
+#promptLibrary .pl-star {padding:0 4px;background:transparent;color:#a48135;font-size:23px;line-height:1;min-width:26px;border:0}
+.pl-card h3 {font-size:14px;color:#1e373b;line-height:1.7;margin:12px 0 8px;overflow-wrap:anywhere}
+.pl-card p {font-size:12px;color:#697478;line-height:1.8;white-space:pre-line;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin:0 0 18px}
+.pl-card-bottom {margin-top:auto;display:flex;justify-content:space-between;align-items:center;gap:5px}.pl-card-bottom span {font-size:10px;color:#77817f}
+.pl-card-bottom button {white-space:nowrap;font-size:11px}.pl-empty {grid-column:1/-1;text-align:center;padding:40px 12px;color:#667776;font-size:13px}
+.pl-paging {display:flex;justify-content:center;align-items:center;gap:15px;margin:22px 0;font-size:12px;color:#536663}
+.pl-import {border-top:1px solid #deded5;padding-top:16px;font-size:12px;color:#596567}.pl-import summary {cursor:pointer;font-weight:600;color:#253d41}
+.pl-import p {line-height:1.8}.pl-import ul {max-height:250px;overflow:auto;padding-left:22px}.pl-import li {overflow-wrap:anywhere;margin:7px 0}
+#plDialog {width:min(900px,94vw);max-height:90vh;border:1px solid #c8cbbf;border-radius:8px;padding:24px;color:#253b3d;background:#faf9f5;overflow:auto}
+#plDialog::backdrop {background:rgba(14,30,33,.6)}.pl-dialog-head {display:flex;justify-content:space-between;align-items:flex-start;gap:20px}
+#plDialog h2 {font-size:20px;line-height:1.7;margin:7px 0;color:#1b383e;overflow-wrap:anywhere}.pl-source {font-size:11px;white-space:pre-line;color:#71817f;overflow-wrap:anywhere}
+.pl-note {font-size:12px;line-height:1.8;background:#eee9dd;padding:12px;border-left:3px solid #b79553}
+.pl-variables {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.pl-variables label,#plDialog>label {font-size:12px}
+.pl-editor-actions {display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.pl-editor-actions button {font-size:11px}
+#plEditor {width:100%;resize:vertical;min-height:210px;font-size:13px;line-height:1.8;background:#fff;margin:8px 0 18px;white-space:pre-wrap}
+.pl-dialog-footer {display:flex;gap:9px;flex-wrap:wrap;align-items:center}.pl-dialog-footer label {font-size:12px}.pl-dialog-footer select {max-width:240px;margin:0}
+#plFeedback {font-size:12px;color:#375d4b;min-height:18px}.pl-sr {position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+#promptLibrary button:focus-visible,#plDialog button:focus-visible {outline:3px solid #d0a759;outline-offset:3px}
+#promptLibrary button[aria-pressed="true"] {box-shadow:inset 0 0 0 1px #a68a51}
+@media(max-width:960px){.pl-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.pl-cards{grid-template-columns:1fr}.pl-heading{padding:24px 17px}.pl-heading h2{font-size:20px}.pl-local{display:none}.pl-content{padding:18px 15px}.pl-topline{align-items:flex-start}.pl-variables{grid-template-columns:1fr}#plDialog{padding:16px}.pl-dialog-footer select{max-width:100%}.pl-search button{white-space:nowrap}}

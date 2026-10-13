@@ -19,8 +19,9 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(ROOT, "workbench_ui")
-OUTPUT_DIR = os.path.join(ROOT, "output", "browser")
-VIDEOS_DIR = os.path.join(ROOT, "output", "browser_videos")
+OUTPUT_ROOT = os.environ.get("AIMANJU_OUTPUT_DIR", os.path.join(ROOT, "output"))
+OUTPUT_DIR = os.path.join(OUTPUT_ROOT, "browser")
+VIDEOS_DIR = os.path.join(OUTPUT_ROOT, "browser_videos")
 STORYBOARD_PATH = os.path.join(OUTPUT_DIR, "storyboard.json")
 STATE_PATH = os.path.join(OUTPUT_DIR, "session_state.json")
 
@@ -34,6 +35,13 @@ SESSION = {
 COMPOSE_TASKS = {}
 
 sys.path.insert(0, ROOT)
+
+from modules.prompt_library import PromptLibrary
+
+PROMPTS = PromptLibrary(
+    os.path.join(ROOT, "data", "prompts", "builtin.json"),
+    os.environ.get("AIMANJU_PRIVATE_DATA_DIR", os.path.join(ROOT, "data", "private")),
+)
 
 from modules.browser_workflow import (  # noqa: E402
     build_storyboard,
@@ -96,7 +104,7 @@ def find_free_port(start: int = 8765, tries: int = 10) -> int:
 
 
 class WorkbenchHandler(BaseHTTPRequestHandler):
-    server_version = "Novel2ComicDrama/0.4"
+    server_version = "Novel2ComicDrama/0.5"
 
     def log_message(self, format, *args):
         pass
@@ -133,6 +141,22 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             self._serve_index()
+        elif path in ("/assets/prompt-library.js", "/assets/prompt-library.css"):
+            filename = path.rsplit("/", 1)[1]
+            with open(os.path.join(UI_DIR, filename), "rb") as f:
+                body = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/javascript; charset=utf-8" if filename.endswith(".js") else "text/css; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif path in ("/api/prompts", "/api/prompts/detail"):
+            try:
+                params = parse_qs(urlparse(self.path).query)
+                data = PROMPTS.detail(params.get("id", [""])[0]) if path.endswith("/detail") else PROMPTS.query(params)
+                self._send_json(200, data)
+            except (ValueError, KeyError) as exc:
+                self._send_json(400, {"error": str(exc)})
         elif path == "/api/health":
             self._send_json(200, {"ok": True})
         elif path == "/api/videos":
@@ -172,7 +196,17 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = urlparse(self.path).path
         try:
-            if path == "/api/expand":
+            if path in ("/api/prompts/import", "/api/prompts/favorites"):
+                # Import is only callable from this local workbench, not another website.
+                origin = self.headers.get("Origin", "")
+                expected = "http://" + self.headers.get("Host", "")
+                if (origin and origin != expected) or self.headers.get("Sec-Fetch-Site") == "cross-site":
+                    self._send_json(403, {"error": "请在本地工作台操作资料库"})
+                    return
+                data = self._read_json()
+                self._send_json(200, PROMPTS.save_favorites(data.get("favorites", [])) if path.endswith("/favorites") else
+                                PROMPTS.import_folder(str(data.get("folder", ""))))
+            elif path == "/api/expand":
                 data = self._read_json()
                 storyboard = build_storyboard(
                     text=data.get("text", ""),
@@ -332,6 +366,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 self._send_json(200, {"task_id": task_id})
             else:
                 self._send_json(404, {"error": "接口不存在"})
+        except (ValueError, KeyError) as e:
+            self._send_json(400, {"error": str(e)})
         except Exception as e:
             self._send_json(500, {"error": str(e)})
 

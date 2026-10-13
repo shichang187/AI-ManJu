@@ -230,6 +230,7 @@
       .shots { grid-template-columns: 1fr; }
     }
   </style>
+  <link rel="stylesheet" href="/assets/prompt-library.css">
 </head>
 <body>
   <header>
@@ -291,6 +292,8 @@
         </div>
       </div>
     </section>
+
+    <section id="promptLibrary" aria-label="提示词工坊"></section>
 
     <section id="storyboardSection" style="display:none">
       <h2>分镜脚本</h2>
@@ -530,6 +533,7 @@
             <span class="badge">${shot.duration}s</span>
             <span class="badge ${badgeClass}">${typeLabel[shot.shot_type] || shot.shot_type}</span>
             <button class="secondary" onclick="copyShotPrompt(${index})">复制提示词</button>
+            <button class="secondary" onclick="promptLibrary.browse(${index})">从提示词库选择</button>
           </div>
           <div class="shot-body">
             <div class="shot-desc">${escapeHtml(shot.description)}</div>
@@ -884,5 +888,6 @@
 
     restoreState().then(refreshVideos);
   </script>
+  <script src="/assets/prompt-library.js"></script>
 </body>
 </html>
