@@ -231,7 +231,7 @@
     }
   </style>
   <link rel="stylesheet" href="/assets/prompt-library.css">
-<link rel="stylesheet" href="/assets/upgrade.css"></head>
+<link rel="stylesheet" href="/assets/upgrade.css"><link rel="stylesheet" href="/assets/experience.css"></head>
 <body>
   <header>
     <span class="dot"></span>
@@ -239,7 +239,7 @@
   </header>
 
   <main>
-    <section>
+    <section id="storyInputSection">
       <h2>故事输入</h2>
       <textarea id="storyInput" placeholder="输入简短故事，例如：少年在雨夜追一个神秘人"></textarea>
       <div class="grid">
@@ -301,7 +301,7 @@
       <div id="shotList" class="shots"></div>
     </section>
 
-    <section>
+    <section id="projectSection">
       <h2>项目文件夹</h2>
       <div class="actions">
         <button onclick="createProject()">确定分镜无误</button>
@@ -310,7 +310,7 @@
       <div id="projectInfo" class="project-box"></div>
     </section>
 
-    <section>
+    <section id="composeSection">
       <h2>视频合成</h2>
       <div class="grid">
         <div class="field">
@@ -717,7 +717,6 @@
             list.appendChild(li);
           });
         }
-        toast(`找到 ${res.count} 个视频`);
         updateComposeBtn();
       } catch (e) {
         toast(e.message);
@@ -889,5 +888,6 @@
 
   </script>
   <script src="/assets/upgrade.js"></script><script src="/assets/prompt-library.js"></script>
+  <script src="/assets/experience.js"></script>
 </body>
 </html>

@@ -7,6 +7,8 @@ from dataclasses import asdict
 from .character_manager import CharacterProfile
 from .project_store import validate_storyboard
 
+AUTO_MODEL = object()
+
 
 def parse_model_result(text):
     text = re.sub(r'^```(?:json)?\s*|\s*```$', '', text.strip())
@@ -17,7 +19,8 @@ def parse_model_result(text):
 
 
 def build(text, style='通用', min_sec=3, max_sec=6, target_shots=0, subject='',
-          character_desc='', location='', time_of_day='', mood='', creative_point='', key_shot=''):
+          character_desc='', location='', time_of_day='', mood='', creative_point='', key_shot='',
+          llm_result=AUTO_MODEL):
     from . import browser_workflow as old
     text = text.strip()
     if not text:
@@ -35,7 +38,7 @@ def build(text, style='通用', min_sec=3, max_sec=6, target_shots=0, subject=''
     constraints = dict(subject=subject, character_desc=character_desc, location=location,
                        time_of_day=time_of_day, mood=mood, creative_point=creative_point,
                        key_shot=key_shot, target_shots=target_shots, min_sec=min_sec, max_sec=max_sec)
-    llm = old._llm_expand(text, style, constraints)
+    llm = old._llm_expand(text, style, constraints) if llm_result is AUTO_MODEL else llm_result
     units = [p.strip() for p in re.split(r'(?<=[。！？])(?=[^”」』])|(?<=[”」』])|\n+', text) if p.strip()]
     count = int(target_shots) or max(5, len(units), math.ceil(len(text) / 140))
     if count > 300:
@@ -71,7 +74,7 @@ def build(text, style='通用', min_sec=3, max_sec=6, target_shots=0, subject=''
                       'speaker': r.get('speaker', subject if dialogue else ''),
                       'camera_movement': camera, 'prompt': str(r.get('prompt') or prompt),
                       'shot_type': r.get('shot_type', 'dialogue' if dialogue else 'action'),
-                      'scene_id': 'scene_1', 'characters': r.get('characters', [subject]),
+                      'scene_id': r.get('scene_id', 'scene_1'), 'characters': r.get('characters', [subject]),
                       'negative_prompt': old.DOUBAO_NEGATIVE_PROMPT, 'subtitle_cues': r.get('subtitle_cues', [])})
     warnings = []
     for shot in shots:
@@ -87,7 +90,7 @@ def build(text, style='通用', min_sec=3, max_sec=6, target_shots=0, subject=''
         'character_desc': character_desc, 'environment_anchor': anchor, 'creative_point': creative_point,
         'key_shot': key_shot, 'global_base_prompt': old.DOUBAO_GLOBAL_BASE_PROMPT,
         'negative_prompt': old.DOUBAO_NEGATIVE_PROMPT, 'constraints': constraints,
-        'characters': [asdict(CharacterProfile(name=subject, description=character_desc))],
-        'scenes': [{'scene_id': 'scene_1', 'location': location, 'time_of_day': time_of_day,
-                    'weather': '', 'lighting': '', 'fixed_objects': '', 'positions': ''}],
+        'characters': (llm or {}).get('characters', [asdict(CharacterProfile(name=subject, description=character_desc))]),
+        'scenes': (llm or {}).get('scenes', [{'scene_id': 'scene_1', 'location': location, 'time_of_day': time_of_day,
+                    'weather': '', 'lighting': '', 'fixed_objects': '', 'positions': ''}]),
         'warnings': warnings, 'shots': shots, 'generation': '模型输出' if llm else '本地剧情分段'})

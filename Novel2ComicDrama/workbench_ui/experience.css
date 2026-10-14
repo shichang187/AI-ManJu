@@ -1,0 +1,35 @@
+/* Calm editorial workspace: clear steps, quiet advanced tools. */
+main {max-width:1040px;}
+#storyInputSection,#modelStep,#finishStep {padding:24px 28px;margin-bottom:20px;}
+#storyInputSection h2,#modelStep h2,#finishStep>h2 {font-size:19px;letter-spacing:.03em;border-left-color:#247260;}
+#storyInput {min-height:132px;line-height:1.8;}
+.simple-grid {display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+#modelStep label {display:block;font-weight:600;margin:12px 0;}
+#modelStep input,#modelStep select {display:block;width:100%;margin-top:7px;padding:10px;border:1px solid #ccd3dd;border-radius:8px;font:inherit;}
+.advanced {border-top:1px solid #e7eaed;margin-top:16px;padding-top:12px;}
+.advanced summary {cursor:pointer;color:#465964;font-weight:600;padding:5px 0;}
+.advanced>p,#modelSettings p,.step-note {color:#59656d;font-size:13px;line-height:1.7;margin:10px 0;}
+.call-status {margin:14px 0;padding:12px 15px;background:#edf5f2;border-left:3px solid #247260;line-height:1.65;overflow-wrap:anywhere;}
+.call-status[data-status=error] {background:#fff4ef;border-color:#a34730;}
+.call-status[data-status=running] {background:#fff9e7;border-color:#a07b2b;}
+#generateStory {background:#247260;min-width:200px;}
+#finishStep>section,#projectManager,#modelHandoff {border:0;border-radius:0;padding:12px 0;margin-bottom:12px;}
+#finishStep>p {line-height:1.7;color:#59656d;}
+#expandedText {font-size:13px;line-height:1.7;max-height:180px;overflow:auto;}
+#plPurposes [aria-pressed=true] {background:#247260;color:white;}
+#plReferenceEntry {margin-bottom:18px;}
+#quickTemplates {width:min(720px,95vw);max-height:85vh;overflow:auto;padding:24px;border:1px solid #ccd3dd;border-radius:12px;}
+#quickTemplates::backdrop {background:#15232d66;}
+#quickTemplates p {font-size:13px;line-height:1.7;color:#59656d;margin:10px 0;}
+#quickTemplates input {width:100%;margin:12px 0;padding:12px;}
+#quickList article {border-top:1px solid #e7eaed;padding:15px 0;}
+#assetBindings .advanced {margin-bottom:16px;}
+#shotList .shot-card {box-shadow:none;}
+button:focus-visible,summary:focus-visible {outline:3px solid #79b7a7;outline-offset:3px;}
+@media(max-width:600px){
+  #storyInputSection,#modelStep,#finishStep{padding:18px 14px;}
+  .simple-grid{grid-template-columns:1fr;gap:0;}
+  #generateStory{width:100%;}
+  .call-status{font-size:14px;}
+}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;}}

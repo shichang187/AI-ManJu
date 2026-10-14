@@ -32,10 +32,13 @@ from modules.prompt_library import PromptLibrary
 from modules.browser_workflow import build_storyboard, save_storyboard
 from modules.project_store import ProjectStore, atomic_json, bounded, validate_storyboard
 from modules.media_export import scan, snapshot, export, OPEN_TYPES
+from modules.model_service import ModelService
+from modules.creative import build
 
 STORE = ProjectStore(OUTPUT_DIR)
 PROMPTS = PromptLibrary(os.path.join(ROOT, 'data', 'prompts', 'builtin.json'),
                        os.environ.get('AIMANJU_PRIVATE_DATA_DIR', os.path.join(ROOT, 'data', 'private')))
+MODELS = ModelService(PROMPTS.private_dir)
 
 def resolve_project_path(value):
     return os.path.realpath(value if os.path.isabs(value) else os.path.join(ROOT, value)) if value else ''
@@ -102,7 +105,7 @@ def queue_export(pid, tid, snapshot_path, folder, settings):
     QUEUES[pid].put((tid, snapshot_path, folder, copy.deepcopy(settings)))
 
 class WorkbenchHandler(BaseHTTPRequestHandler):
-    server_version = 'Novel2ComicDrama/0.6'
+    server_version = 'Novel2ComicDrama/0.7'
     def log_message(self, *_):
         pass
     def _send_json(self, code, payload):
@@ -168,16 +171,18 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 return self._send(200, body.encode('utf-8'), 'text/html; charset=utf-8')
             if path.startswith('/assets/'):
                 name = path.rsplit('/', 1)[1]
-                if name not in ('prompt-library.js', 'prompt-library.css', 'upgrade.js', 'upgrade.css'):
+                if name not in ('prompt-library.js', 'prompt-library.css', 'upgrade.js', 'upgrade.css', 'experience.js', 'experience.css'):
                     raise ValueError('资源不存在')
                 return self._send(200, Path(UI_DIR, name).read_bytes(),
                                   'text/javascript; charset=utf-8' if name.endswith('.js') else 'text/css; charset=utf-8')
             if path == '/favicon.ico':
                 return self._send(204, b'', 'image/x-icon')
             if path == '/api/health':
-                result = {'ok': True, 'version': '0.6.0'}
+                result = {'ok': True, 'version': '0.7.0'}
             elif path in ('/api/prompts', '/api/prompts/detail'):
                 result = PROMPTS.detail(params.get('id', [''])[0]) if path.endswith('/detail') else PROMPTS.query(params)
+            elif path == '/api/model-status':
+                result = MODELS.status()
             elif path == '/api/projects':
                 result = {'projects': STORE.listing()}
             elif path == '/api/project-history':
@@ -219,6 +224,43 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             self._guard(write=True)
             path = urlparse(self.path).path
             data = self._read_json()
+            if path == '/api/model-settings':
+                return self._send_json(200, MODELS.save(data))
+            if path == '/api/model-request':
+                return self._send_json(200, {'request': MODELS.prepare(data, data.get('director_instruction', ''))})
+            if path == '/api/expand':
+                # Never hold STATE_LOCK over network IO; status stays readable.
+                args = {k: data[k] for k in ('text', 'style', 'min_sec', 'max_sec', 'target_shots',
+                        'subject', 'character_desc', 'location', 'time_of_day', 'mood', 'creative_point', 'key_shot') if k in data}
+                mode = data.get('generation_mode', 'local')
+                if mode not in ('api', 'local'):
+                    raise ValueError('请选择真实模型调用或本地规则分段；手动结果从高级入口导入')
+                # Validate constraints before any paid or external request.
+                draft = build(**args, llm_result=None)
+                with STATE_LOCK:
+                    captured = json.dumps(SESSION, sort_keys=True, ensure_ascii=False)
+                llm = MODELS.generate(data, data.get('director_instruction', '')) if mode == 'api' else None
+                try:
+                    sb = build(**args, llm_result=llm) if llm is not None else draft
+                    info = {'mode': mode, 'model': MODELS.status()['settings']['model'] if mode == 'api' else '',
+                            'message': '真实模型返回；内容效果待审' if mode == 'api' else '本地规则分段，未调用模型'}
+                    sb['generation_info'] = info
+                    with STATE_LOCK:
+                        if captured != json.dumps(SESSION, sort_keys=True, ensure_ascii=False):
+                            raise ValueError('等待期间项目已变化，请在原项目重新生成；当前内容已保留')
+                        SESSION.update(storyboard=sb, project_id='', project_folder='', project_opened=False,
+                                       inputs=data, profile=data.get('profile', {}), interview={'answers': {k: data[k] for k in
+                                       ('location', 'time_of_day', 'mood', 'creative_point', 'key_shot') if data.get(k)}, 'done': False})
+                        SESSION.pop('revision', None)
+                        SESSION.pop('bindings', None)
+                        save_session_state()
+                    if mode == 'api':
+                        MODELS.finish(mode, message=info['message'])
+                    return self._send_json(200, {'storyboard': sb, 'storyboard_path': '', 'generation': info})
+                except Exception:
+                    if mode == 'api':
+                        MODELS.finish(mode, False, '生成未保存：结果或当前项目发生变化，旧内容已保留')
+                    raise
             with STATE_LOCK:
                 if path == '/api/prompts/import':
                     result = PROMPTS.start_import(str(data.get('folder', '')))
@@ -228,14 +270,6 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     result = PROMPTS.save_personal(data)
                 elif path == '/api/prompts/undo-import':
                     result = PROMPTS.undo_import()
-                elif path == '/api/expand':
-                    args = {k: data[k] for k in ('text', 'style', 'min_sec', 'max_sec', 'target_shots',
-                            'subject', 'character_desc', 'location', 'time_of_day', 'mood', 'creative_point', 'key_shot') if k in data}
-                    sb = build_storyboard(**args)
-                    SESSION.update(storyboard=sb, project_id='', project_folder='', project_opened=False,
-                                   inputs=data, profile=data.get('profile', {}))
-                    save_session_state()
-                    result = {'storyboard': sb, 'storyboard_path': ''}
                 elif path == '/api/save-storyboard':
                     sb = validate_storyboard(data.get('storyboard', data))
                     if SESSION.get('project_id'):
@@ -343,7 +377,7 @@ def main():
     server = ThreadingHTTPServer(('127.0.0.1', 0), WorkbenchHandler)
     url = f'http://127.0.0.1:{server.server_address[1]}/'
     threading.Timer(.8, lambda: webbrowser.open(url)).start()
-    print('AI漫剧工作台 0.6.0 已启动：' + url)
+    print('AI漫剧工作台 0.7.0 已启动：' + url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -81,6 +81,7 @@ const upgradeUI = (() => {
         markDirty(); renderStoryboard();
       })); $('shotList').append(card);
     });
+    window.experienceUI?.render();
   };
   saveState = function () {
     clearTimeout(handoffTimer);
@@ -98,6 +99,7 @@ const upgradeUI = (() => {
     if(s.inputs?.director_instruction!==undefined) $('directorInstruction').value=s.inputs.director_instruction;
     $('modelResult').value=s.inputs?.model_result_draft || ''; directorSource=s.inputs?.director_source_id || '';
     restoreInputs(state.inputs); renderProject(); renderStoryboard(); dirty=false;
+    window.experienceUI?.sync();
     $('saveFeedback').textContent=state.projectId ? `当前项目 ${state.storyboard?.title || ''} · 版本 ${state.revision}` : '当前是草稿，确认后创建项目。';
     await refreshProjects(); await refreshVideos(); await refreshTasks(); updateComposeBtn();
   }
@@ -166,13 +168,17 @@ const upgradeUI = (() => {
     modelCandidate=v;$('modelFeedback').textContent=JSON.stringify(v,null,2);$('importModel').disabled=false;
     }catch(e){modelCandidate=null;$('importModel').disabled=true;$('modelFeedback').textContent='校验失败：'+e.message;}};
   $('modelResult').oninput=()=>{modelCandidate=null;$('importModel').disabled=true;};
-  $('importModel').onclick=async()=>{if(!modelCandidate)return;state.storyboard={...(state.storyboard || {}),...modelCandidate};renderStoryboard();markDirty();await saveStoryboard();};
+  $('importModel').onclick=async()=>{if(!modelCandidate)return false;
+    const before=state.storyboard;state.storyboard={...(state.storyboard || {}),...modelCandidate,
+      generation:'手动粘贴结果',generation_info:{mode:'manual',message:'手动粘贴，来源和模型效果未验证'}};
+    renderStoryboard();markDirty();if(await saveStoryboard())return true;
+    state.storyboard=before;renderStoryboard();return false;};
   $('copyDirector').onclick=async()=>{const sb=state.storyboard || {},inputs=collectInputs();const context={story:inputs.text,style:inputs.style,interview:state.interview.answers,characters:sb.characters,scenes:sb.scenes,constraints:sb.constraints};
     try{await navigator.clipboard.writeText($('directorInstruction').value+'\n\n我的创作约束：\n'+JSON.stringify(context,null,2));toast('已复制指令与故事');}catch{toast('复制失败，请手动复制文本');}};
   function tab(library){ main.querySelectorAll(':scope > section').forEach(s=>s.hidden=library?s.id!=='promptLibrary':s.id==='promptLibrary');
     $('tabCreate').setAttribute('aria-pressed',!library);$('tabLibrary').setAttribute('aria-pressed',library); }
   $('tabCreate').onclick=()=>tab(false);$('tabLibrary').onclick=()=>tab(true);tab(false);
   return {adopt,refreshProjects,tab,director(text,id){$('directorInstruction').value=text;
-    directorSource=id || '';saveState();tab(false);flow.scrollIntoView();}};
+    directorSource=id || '';saveState();tab(false);window.experienceUI?.selectInstruction(id);flow.closest('details')?.setAttribute('open','');flow.scrollIntoView();}};
 })();
 restoreState();

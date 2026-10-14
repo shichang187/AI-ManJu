@@ -250,6 +250,8 @@ class CatalogImportMixin:
             self.import_lock.release()
 
     def save_personal(self, data):
+        if data.get('purpose') and data['purpose'] not in ('instruction', 'shot', 'reference'):
+            raise ValueError('个人版本用途不合法')
         from .prompt_library import STAGES
         if not isinstance(data.get('text'), str) or not data['text'].strip():
             raise ValueError('个人提示词不能为空')
@@ -262,7 +264,8 @@ class CatalogImportMixin:
                  'sources': original['sources'] if original else [], 'source_id': data.get('source_id'),
                  'models': data.get('models', []), 'verified': False, 'reviewed': True,
                  'evaluation': str(data.get('evaluation', '未验证')),
-                 'result': str(data.get('result', '')), 'input': str(data.get('input', ''))}
+                 'result': str(data.get('result', '')), 'input': str(data.get('input', '')),
+                 'purpose_override': data.get('purpose', '')}
         with self.lock:
             personal = self.personal + [entry]
             atomic_json(self.private_dir / 'personal.json', personal)

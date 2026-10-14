@@ -2,11 +2,11 @@
 (() => {
   const root = document.getElementById('promptLibrary');
   const html = escapeHtml;
-  let page = 1, stage = '漫剧', current = null, sequence = 0, selectedShot = 0;
+  let page = 1, stage = '', current = null, sequence = 0, selectedShot = 0, purpose = 'shot';
   let favorites = new Set();
   root.innerHTML = `
     <div class="pl-heading"><div><span class="pl-eyebrow">PROMPT ATELIER · 提示词工坊</span>
-      <h2>把灵感，变成可以开拍的画面</h2><p>从角色到镜头，挑选、修改，再放进你的分镜。</p></div>
+      <h2>为这一步选择合适的资料</h2><p>按用途整理的建议分类，使用前可修改，生成效果未验证。</p></div>
       <span class="pl-local">本地资料库</span></div>
     <div class="pl-content">
       <div class="pl-topline"><p id="plStats" role="status">正在读取提示词…</p>
@@ -14,6 +14,8 @@
       <div class="pl-search"><label for="plQuery" class="pl-sr">搜索提示词</label>
         <input id="plQuery" type="search" placeholder="搜索角色、场景、运镜，或原文关键词…">
         <button id="plSearchButton">搜索</button></div>
+      <div id="plPurposes" class="pl-stages" aria-label="资料用途"></div>
+      <details id="plReferenceEntry"><summary>高级：参考原文</summary><p>原文、教程、示例与未核实条目。原文不自动发送给模型。</p><button id="plReferences" class="secondary">查看参考原文</button></details>
       <div id="plStages" class="pl-stages" aria-label="创作阶段"></div>
       <div id="plCards" class="pl-cards" aria-live="polite"></div>
       <div class="pl-paging"><button class="secondary" id="plPrev">上一页</button>
@@ -42,6 +44,7 @@
         <button class="secondary" id="plDirector">用作导演指令</button></div>
       <details><summary>个人版本与效果记录</summary><label>阶段<select id="plPersonalStage">
         <option>角色</option><option>场景</option><option>剧本</option><option>分镜</option><option>运镜</option><option>风格</option><option>扩展</option></select></label>
+        <label>用途<select id="plPersonalPurpose"><option value="instruction">给对话模型的指令</option><option value="shot">直接用于镜头的模板</option><option value="reference">参考原文</option></select></label>
         <label>用途类别<input id="plPersonalKind" value="个人模板"></label><label>实际输入<textarea id="plActualInput" rows="2"></textarea></label>
         <label>实际结果<textarea id="plActualResult" rows="2"></textarea></label><label>人工评语<textarea id="plEvaluation" rows="2" placeholder="未验证"></textarea></label>
         <button class="secondary" id="plPersonalSave">保存个人版本</button></details>
@@ -59,14 +62,17 @@
   }
   async function load() {
     const request = ++sequence;
-    const params = new URLSearchParams({page, stage, q: $('plQuery').value});
+    const params = new URLSearchParams({page, stage, purpose, q: $('plQuery').value});
     if (favoriteOnly) params.set('favorites', '1');
     try {
       const data = await api('/api/prompts?' + params);
       if (request !== sequence) return;
       favorites = new Set(data.favorites);
       page = data.page;
-      $('plStats').textContent = `${data.private_count} 条私有资料 · ${data.builtin_count} 条原创入门模板 · 当前 ${data.total} 条`;
+      const labels = {instruction:'给对话模型的指令',shot:'直接用于镜头的模板'};
+      $('plPurposes').innerHTML=Object.entries(labels).map(([key,label])=>`<button data-purpose="${key}" aria-pressed="${purpose===key}">${label} · ${data.purpose_counts[key]}</button>`).join('');
+      $('plPurposes').querySelectorAll('button').forEach(b=>b.onclick=()=>{purpose=b.dataset.purpose;page=1;load();});
+      $('plStats').textContent = `${data.private_count} 条私有记录 · ${data.builtin_count} 条原创入门模板 · ${purpose==='reference'?'参考原文':labels[purpose]} ${data.total} 条（规则建议，未全库人工优选）`;
       const stages = ['漫剧', ...Object.keys(data.counts), '全部'];
       $('plStages').innerHTML = stages.map(s => `<button class="pl-stage ${stage === (s === '全部' ? '' : s) ? 'active' : ''}"
         data-stage="${html(s)}" aria-pressed="${stage === (s === '全部' ? '' : s)}">${html(s)}${s in data.counts ? ' ' + data.counts[s] : ''}</button>`).join('');
@@ -116,15 +122,18 @@
     try {
       selectedShot = index; current = await api('/api/prompts/detail?id=' + encodeURIComponent(id));
       $('plTitle').textContent = current.title;
-      $('plMeta').textContent = current.stage + ' · ' + current.kind + (current.private ? ' · 私有资料' : ' · 原创入门模板');
+      $('plMeta').textContent = current.purpose_label + ' · ' + current.kind + (current.private ? ' · 私有资料' : ' · 原创入门模板');
       $('plSource').textContent = current.sources.map(s => s.label + ' / ' + s.file).join('\n');
-      $('plUsage').textContent = (current.usage === '先给对话模型' ?
+      $('plUsage').textContent = (current.purpose === 'instruction' ?
         '这是完整创作指令。建议复制给对话模型，拿到输出后再用作镜头提示词；请先编辑，再应用到分镜。' :
-        current.usage === '参考链接' ? '这条资料只有参考链接。工作台未读取链接内容。' :
+        current.purpose === 'reference' ? '这是参考原文，需要阅读并选取；不会自动应用到镜头或发送给模型。' :
         '根据你的角色、场景和镜头修改后使用。替换只改变选定镜头的提示词。') +
         ' 模型适用性与成片效果未验证；平台功能以实际页面为准。';
       $('plFeedback').textContent = ''; $('plPersonalStage').value=current.stage;
       $('plPersonalKind').value=current.kind; renderVariables(); renderText(); shotOptions();
+      $('plPersonalPurpose').value=current.purpose;
+      $('plApply').hidden=current.purpose!=='shot'; $('plDirector').hidden=current.purpose!=='instruction';
+      $('plFill').hidden=current.purpose==='reference';
       if (!$('plDialog').open) $('plDialog').showModal();
     } catch (e) { toast(e.message); }
   }
@@ -155,6 +164,7 @@
   async function persistChange(undo) {
     const shot = shots()[Number($('plShot').value)];
     if (!shot) return error('请先生成分镜。');
+    if(!undo && current.purpose!=='shot') return error('这条资料需要先阅读或用于模型，不能直接替换镜头。');
     const prompt = undo ? shot.prompt_before_library : $('plEditor').value.trim();
     if (!prompt || /\{\{[^{}]+\}\}/.test(prompt)) return error('请填写所有模板变量，或编辑后再应用。');
     const before = JSON.parse(JSON.stringify(shot));
@@ -163,7 +173,7 @@
     $('plApply').disabled = true; $('plUndo').disabled = true;
     try {
       await api('/api/save-storyboard', state.storyboard);
-      renderStoryboard(); saveState(); shotOptions();
+      renderStoryboard(); await saveState(); shotOptions();
       $('plFeedback').textContent = undo ? '已恢复上次替换前的提示词。' : '已保存到选定镜头。可以撤销上次替换。';
     } catch (e) { Object.keys(shot).forEach(k => delete shot[k]); Object.assign(shot, before); shotOptions(); error('保存失败：' + e.message); }
   }
@@ -172,6 +182,7 @@
   $('plPersonalSave').addEventListener('click', async () => {
     try { await api('/api/prompts/personal', {source_id:current.id,title:current.title+' · 个人版本',text:$('plEditor').value,
       stage:$('plPersonalStage').value,kind:$('plPersonalKind').value,input:$('plActualInput').value,
+      purpose:$('plPersonalPurpose').value,
       result:$('plActualResult').value,evaluation:$('plEvaluation').value || '未验证'});
       $('plFeedback').textContent='个人版本已保存，来源原文保留。'; await load(); }
     catch(e) { error('保存失败：'+e.message); }
@@ -204,8 +215,10 @@
     try { await api('/api/prompts/undo-import', {}); $('plImportStatus').textContent='已恢复上次导入前的资料库。'; await load(); }
     catch(e) { $('plImportStatus').textContent='撤销失败：'+e.message; }
   });
-  window.promptLibrary = {browse(index = 0) {
-    selectedShot = index; upgradeUI.tab(true); root.scrollIntoView({behavior: 'smooth', block: 'start'}); $('plQuery').focus({preventScroll: true});
+  $('plReferences').onclick=()=>{purpose='reference';stage='';page=1;load();};
+  window.promptLibrary = {open,browse(index = 0, use = 'shot') {
+    selectedShot = index;purpose=use;stage='';page=1;$('plQuery').value='';load();upgradeUI.tab(true);
+    root.scrollIntoView({behavior: 'smooth', block: 'start'}); $('plQuery').focus({preventScroll: true});
   }};
   load();
 })();

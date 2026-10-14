@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title AI Comic Drama Workbench 0.6
+title AI Comic Drama Workbench 0.7
 cd /d "%~dp0"
 if defined AIMANJU_PYTHON (
     "%AIMANJU_PYTHON%" scripts\doctor.py

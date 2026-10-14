@@ -17,6 +17,26 @@ W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
 X = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
 LIMIT = 32 * 1024 * 1024
 
+PURPOSES = {'instruction': '给对话模型的指令', 'shot': '直接用于镜头的模板', 'reference': '参考原文'}
+
+
+def purpose(entry):
+    """Conservative content suggestions; original documents stay untouched."""
+    if entry.get('purpose_override') in PURPOSES and entry.get('id', '').startswith('personal_'):
+        return entry['purpose_override'], '作者为个人版本选择的用途；效果未验证'
+    body = entry.get('text', '')
+    usage = entry.get('usage', '')
+    original = entry.get('original_kind') == '资料原文' and len(body) > 6000
+    procedural = any(w in body[:3000] for w in ('安装', '点击', '操作步骤', '使用方法', '教程'))
+    visual = any(w in body for w in ('镜头', '画面', '运镜', '构图', '光影', '服装', '配色', '风格', 'camera', 'dolly', 'pan'))
+    if original or procedural or entry.get('kind') in ('教程', '示例', '参考链接', '资料原文') and usage != '先给对话模型':
+        return 'reference', '原文、教程、示例或链接，需阅读选取'
+    if usage == '先给对话模型' and visual:
+        return 'instruction', '内容含模型任务要求与画面创作约束'
+    if (entry.get('kind') == '入门模板' or len(body) <= 2000) and visual and usage in ('镜头模板', '填写后使用', '组合进镜头', '选取并改写'):
+        return 'shot', '内容为画面模板或短片段，需编辑后应用'
+    return 'reference', '尚未核实为可用创作指令或镜头模板'
+
 
 def decode_text(data):
     if data.startswith((b'\xff\xfe', b'\xfe\xff')):
@@ -192,7 +212,9 @@ class PromptLibrary(CatalogImportMixin):
 
     def all_entries(self):
         with self.lock:
-            return self.builtin + list(self.catalog['entries']) + list(self.personal)
+            entries = self.builtin + list(self.catalog['entries']) + list(self.personal)
+            return [dict(e, purpose=purpose(e)[0], purpose_label=PURPOSES[purpose(e)[0]],
+                         purpose_basis=purpose(e)[1]) for e in entries]
 
     def detail(self, entry_id):
         entry = next((e for e in self.all_entries() if e['id'] == entry_id), None)
@@ -206,8 +228,13 @@ class PromptLibrary(CatalogImportMixin):
         q, stage = value('q').strip().lower()[:200], value('stage')
         page = max(1, int(value('page', '1')))
         entries = self.all_entries()
+        selected_purpose = value('purpose')
+        if selected_purpose and selected_purpose not in PURPOSES:
+            raise ValueError('资料用途不存在')
+        purpose_counts = {p: sum(e['purpose'] == p for e in entries) for p in PURPOSES}
         counts = {s: sum(e['stage'] == s for e in entries) for s in STAGES}
-        items = [e for e in entries if (not stage or e['stage'] == stage or stage == '漫剧' and e['stage'] != '扩展')
+        items = [e for e in entries if (not selected_purpose or e['purpose'] == selected_purpose)
+                 and (not stage or e['stage'] == stage or stage == '漫剧' and e['stage'] != '扩展')
                  and (not q or q in (e['title'] + '\n' + e['text'] + '\n' + str(e['sources'])).lower())]
         if value('ids'):
             ids = set(value('ids').split(','))
@@ -222,7 +249,7 @@ class PromptLibrary(CatalogImportMixin):
                      for e in items[(page - 1) * 20:page * 20]]
         with self.lock:
             return {'items': summaries, 'total': total, 'page': page, 'pages': max(1, (total + 19) // 20),
-                    'counts': counts, 'private_count': len(self.catalog['entries']),
+                    'counts': counts, 'purpose_counts': purpose_counts, 'private_count': len(self.catalog['entries']),
                     'builtin_count': len(self.builtin), 'report': self.catalog['report'],
                     'folder': self.catalog.get('folder', ''), 'favorites': list(self.favorites)}
 
