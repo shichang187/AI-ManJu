@@ -2,11 +2,11 @@
 (() => {
   const root = document.getElementById('promptLibrary');
   const html = escapeHtml;
-  let page = 1, stage = '', current = null, sequence = 0, selectedShot = 0, purpose = 'shot';
+  let collection = 'curated', page = 1, stage = '', current = null, sequence = 0, selectedShot = 0, purpose = 'shot';
   let favorites = new Set();
   root.innerHTML = `
     <div class="pl-heading"><div><span class="pl-eyebrow">PROMPT ATELIER · 提示词工坊</span>
-      <h2>为这一步选择合适的资料</h2><p>按用途整理的建议分类，使用前可修改，生成效果未验证。</p></div>
+      <h2>为这一步选择合适的资料</h2><p>默认精选经过内容审核；先带入设定并预览。实际生成效果未验证。</p></div>
       <span class="pl-local">本地资料库</span></div>
     <div class="pl-content">
       <div class="pl-topline"><p id="plStats" role="status">正在读取提示词…</p>
@@ -14,7 +14,7 @@
       <div class="pl-search"><label for="plQuery" class="pl-sr">搜索提示词</label>
         <input id="plQuery" type="search" placeholder="搜索角色、场景、运镜，或原文关键词…">
         <button id="plSearchButton">搜索</button></div>
-      <div id="plPurposes" class="pl-stages" aria-label="资料用途"></div>
+      <div class="pl-stages"><button id="plCurated">精选模板</button><button id="plAllReferences" class="secondary">高级：全部旧资料与个人版本</button></div><div id="plPurposes" class="pl-stages" aria-label="资料用途"></div>
       <details id="plReferenceEntry"><summary>高级：参考原文</summary><p>原文、教程、示例与未核实条目。原文不自动发送给模型。</p><button id="plReferences" class="secondary">查看参考原文</button></details>
       <div id="plStages" class="pl-stages" aria-label="创作阶段"></div>
       <div id="plCards" class="pl-cards" aria-live="polite"></div>
@@ -33,11 +33,11 @@
         <button class="secondary" id="plClose" aria-label="关闭提示词编辑器">关闭</button></div>
       <p id="plSource" class="pl-source"></p>
       <p id="plUsage" class="pl-note"></p>
-      <div id="plVariables" class="pl-variables"></div>
+      <details><summary>高级：逐项编辑模板变量</summary><div id="plVariables" class="pl-variables"></div></details>
       <div class="pl-editor-actions"><button class="secondary" id="plFill">填入当前角色与镜头</button>
-        <button class="secondary" id="plOriginal">恢复资料原文</button>
+        <button class="secondary" id="plOriginal">恢复当前模板</button>
         <button class="secondary" id="plContext">附上当前故事</button></div>
-      <label for="plEditor">使用前预览并修改</label><textarea id="plEditor" rows="13"></textarea>
+      <label>画幅<select id="plAspect"><option>9:16</option><option>16:9</option><option>1:1</option><option>4:3</option><option>3:4</option></select></label><p id="plDependencies" role="status"></p><details><summary>来源、审核说明与原文</summary><p id="plReview"></p><textarea id="plSourceOriginal" rows="5" readonly aria-label="来源可见原文"></textarea></details><label for="plEditor">使用前预览并修改</label><textarea id="plEditor" rows="13"></textarea>
       <div class="pl-dialog-footer"><button id="plCopy">复制提示词</button>
         <label for="plShot">应用到</label><select id="plShot"></select><button id="plApply">替换镜头提示词</button>
         <button class="secondary" id="plUndo">撤销上次替换</button>
@@ -62,17 +62,17 @@
   }
   async function load() {
     const request = ++sequence;
-    const params = new URLSearchParams({page, stage, purpose, q: $('plQuery').value});
+    const params = new URLSearchParams({collection, page, stage, purpose, q: $('plQuery').value});
     if (favoriteOnly) params.set('favorites', '1');
     try {
       const data = await api('/api/prompts?' + params);
       if (request !== sequence) return;
       favorites = new Set(data.favorites);
       page = data.page;
-      const labels = {instruction:'给对话模型的指令',shot:'直接用于镜头的模板'};
+      const labels = {instruction:'给对话模型的指令',shot:'镜头模板',...(collection==='reference'?{reference:'参考原文'}:{})};
       $('plPurposes').innerHTML=Object.entries(labels).map(([key,label])=>`<button data-purpose="${key}" aria-pressed="${purpose===key}">${label} · ${data.purpose_counts[key]}</button>`).join('');
       $('plPurposes').querySelectorAll('button').forEach(b=>b.onclick=()=>{purpose=b.dataset.purpose;page=1;load();});
-      $('plStats').textContent = `${data.private_count} 条私有记录 · ${data.builtin_count} 条原创入门模板 · ${purpose==='reference'?'参考原文':labels[purpose]} ${data.total} 条（规则建议，未全库人工优选）`;
+      $('plStats').textContent = collection==='curated'?`${data.curated_count} 条精选 · 内容审核通过 · 实际效果未验证`:`高级资料：${data.private_count} 条旧私有记录与个人版本 · 分类是规则建议，未全库优选`;
       const stages = ['漫剧', ...Object.keys(data.counts), '全部'];
       $('plStages').innerHTML = stages.map(s => `<button class="pl-stage ${stage === (s === '全部' ? '' : s) ? 'active' : ''}"
         data-stage="${html(s)}" aria-pressed="${stage === (s === '全部' ? '' : s)}">${html(s)}${s in data.counts ? ' ' + data.counts[s] : ''}</button>`).join('');
@@ -84,7 +84,7 @@
           <button class="pl-star" data-star="${e.id}" aria-label="${favorites.has(e.id) ? '取消收藏' : '收藏'} ${html(e.title)}"
           aria-pressed="${favorites.has(e.id)}">${favorites.has(e.id) ? '★' : '☆'}</button></div>
         <h3>${html(e.title)}</h3><p>${html(e.preview)}</p><div class="pl-card-bottom">
-          <span>${html(e.usage)}${e.private ? ' · 私有' : ''}</span><button class="secondary" data-open="${e.id}">查看 / 使用</button></div></article>`).join('') :
+          <span>${html(e.input_mode||e.usage)} · ${html(e.test_status||'未实测')}${e.private ? ' · 私有' : ''}</span><button class="secondary" data-open="${e.id}">查看 / 使用</button></div></article>`).join('') :
         '<div class="pl-empty">没有找到提示词。试试其他关键词、切换分类，或导入本地资料。</div>';
       $('plCards').querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => open(b.dataset.open)));
       $('plCards').querySelectorAll('[data-star]').forEach(b => b.addEventListener('click', async () => {
@@ -123,7 +123,19 @@
       selectedShot = index; current = await api('/api/prompts/detail?id=' + encodeURIComponent(id));
       $('plTitle').textContent = current.title;
       $('plMeta').textContent = current.purpose_label + ' · ' + current.kind + (current.private ? ' · 私有资料' : ' · 原创入门模板');
-      $('plSource').textContent = current.sources.map(s => s.label + ' / ' + s.file).join('\n');
+      $('plSource').replaceChildren();
+      current.sources.forEach(source=>{
+        const node=document.createElement(/^https:\/\//.test(source.file)?'a':'span');
+        node.textContent=source.label+(node.tagName==='A'?' · 作品入口':' / '+source.file);
+        if(node.tagName==='A'){node.href=source.file;node.target='_blank';node.rel='noopener noreferrer';}
+        $('plSource').append(node,document.createElement('br'));
+      });
+      $('plReview').textContent=(current.scores?'内容评分 '+current.scores.reduce((a,b)=>a+b,0)+'/10 · ':'')+(current.review_reason||current.purpose_basis)+' · '+(current.license_status||'许可未验证');
+      $('plSourceOriginal').value=current.original_text||current.text;
+      $('plDependencies').textContent=(current.input_mode||'')+' · '+(current.scope||'')+' · '+(current.test_status||'未实测')+
+        ((current.required_assets||[]).length?' · 需要素材：'+current.required_assets.join('、'):' · 无必需参考素材');
+      $('plAspect').hidden=current.collection!=='curated'||current.purpose!=='shot';
+
       $('plUsage').textContent = (current.purpose === 'instruction' ?
         '这是完整创作指令。建议复制给对话模型，拿到输出后再用作镜头提示词；请先编辑，再应用到分镜。' :
         current.purpose === 'reference' ? '这是参考原文，需要阅读并选取；不会自动应用到镜头或发送给模型。' :
@@ -132,12 +144,25 @@
       $('plFeedback').textContent = ''; $('plPersonalStage').value=current.stage;
       $('plPersonalKind').value=current.kind; renderVariables(); renderText(); shotOptions();
       $('plPersonalPurpose').value=current.purpose;
-      $('plApply').hidden=current.purpose!=='shot'; $('plDirector').hidden=current.purpose!=='instruction';
+      $('plApply').hidden=current.purpose!=='shot'||current.scope==='连续多镜'; $('plDirector').hidden=current.purpose!=='instruction';
       $('plFill').hidden=current.purpose==='reference';
       if (!$('plDialog').open) $('plDialog').showModal();
     } catch (e) { toast(e.message); }
   }
-  $('plFill').addEventListener('click', () => {
+  $('plAspect').onchange=()=>{$('plFill').click();};
+  $('plFill').addEventListener('click', async () => {
+    if(current.collection==='curated' && current.purpose==='shot'){
+      const shot=shots()[Number($('plShot').value)],id=current.id;
+      if(!shot)return error('请先生成分镜');
+      try{
+        const data=await api('/api/prompts/adapt',{id,shot_id:shot.shot_id,aspect:$('plAspect').value});
+        if(current.id!==id||shots()[Number($('plShot').value)]?.shot_id!==data.shot_id)return;
+        $('plVariables').querySelectorAll('input').forEach(i=>{i.value=data.variables[i.dataset.variable]||'';});
+        $('plEditor').value=data.text;
+        $('plFeedback').textContent=data.missing_variables.length?'需要填写：'+data.missing_variables.join('、'):'当前角色、场景、对白归属与时长已填入；请预览后应用。';
+      }catch(e){error(e.message);}return;
+    }
+
     const inputs = collectInputs(), sb = state.storyboard, shot = shots()[Number($('plShot').value)];
     const values = {'角色': sb?.character_desc || inputs.character_desc, '场景': sb?.environment_anchor,
       '动作': shot?.description, '风格': inputs.style, '时长': shot?.duration, '故事': inputs.text,
@@ -151,13 +176,15 @@
         '\n运镜：' + (values['镜头'] || '请填写') + '\n时长：' + (values['时长'] || '请填写') + ' 秒';
     }
   });
-  $('plOriginal').addEventListener('click', () => { renderVariables(); renderText(); $('plFeedback').textContent = '已恢复资料原文。'; });
+  $('plOriginal').addEventListener('click', () => { renderVariables(); renderText(); $('plFeedback').textContent = '已恢复当前模板。'; });
   $('plContext').addEventListener('click', () => {
     const sb = state.storyboard, inputs = collectInputs();
     $('plEditor').value += '\n\n【我的创作上下文】\n故事：' + inputs.text + '\n角色：' +
       (sb?.character_desc || inputs.character_desc) + '\n环境：' + (sb?.environment_anchor || '请根据故事设定');
   });
   $('plCopy').addEventListener('click', async () => {
+    if(/\{\{[^{}]+\}\}/.test($('plEditor').value))return error('请先填写全部变量再复制');
+    if((current.required_assets||[]).length)return error('此参考模板需要素材：'+current.required_assets.join('、')+'；请在平台准备完整素材后使用原文。');
     try { await navigator.clipboard.writeText($('plEditor').value); $('plFeedback').textContent = '已复制，可粘贴到你使用的模型。'; }
     catch { error('复制失败，请选中编辑框文字手动复制。'); }
   });
@@ -167,6 +194,9 @@
     if(!undo && current.purpose!=='shot') return error('这条资料需要先阅读或用于模型，不能直接替换镜头。');
     const prompt = undo ? shot.prompt_before_library : $('plEditor').value.trim();
     if (!prompt || /\{\{[^{}]+\}\}/.test(prompt)) return error('请填写所有模板变量，或编辑后再应用。');
+    if(!undo && current.scope==='连续多镜')return error('连续多镜模板不能覆盖单镜，请按完整时间轴绑定素材');
+    if(!undo && (current.required_assets||[]).length)return error('缺少参考素材：'+current.required_assets.join('、'));
+    if(!undo && current.duration_range && (shot.duration<current.duration_range[0]||shot.duration>current.duration_range[1]))return error('镜头时长超出适配范围，请拆分或另选模板');
     const before = JSON.parse(JSON.stringify(shot));
     if (undo) { shot.prompt = prompt; delete shot.prompt_before_library; delete shot.prompt_library_id; }
     else { shot.prompt_before_library = shot.prompt; shot.prompt = prompt; shot.prompt_library_id = current.id; }
@@ -188,7 +218,7 @@
     catch(e) { error('保存失败：'+e.message); }
   });
   $('plUndo').addEventListener('click', () => persistChange(true));
-  $('plShot').addEventListener('change', () => { selectedShot = Number($('plShot').value); $('plUndo').disabled = !shots()[selectedShot]?.prompt_before_library; });
+  $('plShot').addEventListener('change', () => { selectedShot = Number($('plShot').value); $('plUndo').disabled = !shots()[selectedShot]?.prompt_before_library; if(current.collection==='curated'){renderVariables();renderText();$('plFeedback').textContent='镜头已切换，请重新填入当前设定';} });
   $('plClose').addEventListener('click', () => $('plDialog').close());
   $('plSearchButton').addEventListener('click', () => { page = 1; load(); });
   $('plQuery').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { page = 1; load(); }, 250); });
@@ -215,9 +245,11 @@
     try { await api('/api/prompts/undo-import', {}); $('plImportStatus').textContent='已恢复上次导入前的资料库。'; await load(); }
     catch(e) { $('plImportStatus').textContent='撤销失败：'+e.message; }
   });
-  $('plReferences').onclick=()=>{purpose='reference';stage='';page=1;load();};
+  $('plCurated').onclick=()=>{collection='curated';purpose='shot';stage='';page=1;load();};
+  $('plAllReferences').onclick=()=>{collection='reference';purpose='';stage='';page=1;load();};
+  $('plReferences').onclick=()=>{collection='reference';purpose='reference';stage='';page=1;load();};
   window.promptLibrary = {open,browse(index = 0, use = 'shot') {
-    selectedShot = index;purpose=use;stage='';page=1;$('plQuery').value='';load();upgradeUI.tab(true);
+    selectedShot = index;collection='curated';purpose=use;stage='';page=1;$('plQuery').value='';load();upgradeUI.tab(true);
     root.scrollIntoView({behavior: 'smooth', block: 'start'}); $('plQuery').focus({preventScroll: true});
   }};
   load();

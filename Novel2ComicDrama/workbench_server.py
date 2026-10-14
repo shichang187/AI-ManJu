@@ -33,6 +33,7 @@ from modules.browser_workflow import build_storyboard, save_storyboard
 from modules.project_store import ProjectStore, atomic_json, bounded, validate_storyboard
 from modules.media_export import scan, snapshot, export, OPEN_TYPES
 from modules.model_service import ModelService
+from modules.curated_prompts import adapt
 from modules.creative import build
 
 STORE = ProjectStore(OUTPUT_DIR)
@@ -105,7 +106,7 @@ def queue_export(pid, tid, snapshot_path, folder, settings):
     QUEUES[pid].put((tid, snapshot_path, folder, copy.deepcopy(settings)))
 
 class WorkbenchHandler(BaseHTTPRequestHandler):
-    server_version = 'Novel2ComicDrama/0.7'
+    server_version = 'Novel2ComicDrama/0.8'
     def log_message(self, *_):
         pass
     def _send_json(self, code, payload):
@@ -178,7 +179,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             if path == '/favicon.ico':
                 return self._send(204, b'', 'image/x-icon')
             if path == '/api/health':
-                result = {'ok': True, 'version': '0.7.0'}
+                result = {'ok': True, 'version': '0.8.0'}
             elif path in ('/api/prompts', '/api/prompts/detail'):
                 result = PROMPTS.detail(params.get('id', [''])[0]) if path.endswith('/detail') else PROMPTS.query(params)
             elif path == '/api/model-status':
@@ -224,8 +225,17 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             self._guard(write=True)
             path = urlparse(self.path).path
             data = self._read_json()
+            if path == '/api/prompts/adapt':
+                with STATE_LOCK:
+                    result = adapt(PROMPTS.detail(data.get('id', '')), copy.deepcopy(SESSION.get('storyboard') or {}),
+                                   data.get('shot_id'), SESSION.get('inputs', {}), data.get('aspect', '9:16'))
+                return self._send_json(200, result)
             if path == '/api/model-settings':
                 return self._send_json(200, MODELS.save(data))
+            if path == '/api/model-list':
+                return self._send_json(200, MODELS.fetch_models())
+            if path == '/api/model-test':
+                return self._send_json(200, MODELS.test_request())
             if path == '/api/model-request':
                 return self._send_json(200, {'request': MODELS.prepare(data, data.get('director_instruction', ''))})
             if path == '/api/expand':

@@ -24,6 +24,8 @@ def purpose(entry):
     """Conservative content suggestions; original documents stay untouched."""
     if entry.get('purpose_override') in PURPOSES and entry.get('id', '').startswith('personal_'):
         return entry['purpose_override'], '作者为个人版本选择的用途；效果未验证'
+    if entry.get('collection') == 'curated':
+        return entry['purpose_override'], '经过内容审核的适配版；实际生成效果另记'
     body = entry.get('text', '')
     usage = entry.get('usage', '')
     original = entry.get('original_kind') == '资料原文' and len(body) > 6000
@@ -182,6 +184,7 @@ def make_entry(title, text, kind, source, source_label):
 
 
 from .catalog_import import CatalogImportMixin
+from .curated_prompts import approved
 
 
 class PromptLibrary(CatalogImportMixin):
@@ -197,6 +200,10 @@ class PromptLibrary(CatalogImportMixin):
         self.favorites = json.loads(prefs.read_text(encoding='utf-8')).get('favorites', []) if prefs.exists() else []
 
         self._init_import()
+        instructions = Path(builtin_path).with_name('curated-instructions.json')
+        selections = self.private_dir / 'curated.json'
+        self.curated = (json.loads(instructions.read_text(encoding='utf-8')) if instructions.exists() else []) + (json.loads(selections.read_text(encoding='utf-8')) if selections.exists() else [])
+        self.curated = [dict(e, collection='curated') for e in self.curated if approved(e)]
 
     def save_favorites(self, entry_ids):
         if not isinstance(entry_ids, list) or len(entry_ids) > 10000 or not all(isinstance(i, str) and len(i) <= 80 for i in entry_ids):
@@ -212,7 +219,7 @@ class PromptLibrary(CatalogImportMixin):
 
     def all_entries(self):
         with self.lock:
-            entries = self.builtin + list(self.catalog['entries']) + list(self.personal)
+            entries = self.curated + [dict(e, collection='reference') for e in self.builtin + list(self.catalog['entries']) + list(self.personal)]
             return [dict(e, purpose=purpose(e)[0], purpose_label=PURPOSES[purpose(e)[0]],
                          purpose_basis=purpose(e)[1]) for e in entries]
 
@@ -228,6 +235,11 @@ class PromptLibrary(CatalogImportMixin):
         q, stage = value('q').strip().lower()[:200], value('stage')
         page = max(1, int(value('page', '1')))
         entries = self.all_entries()
+        collection = value('collection')
+        if collection not in ('', 'curated', 'reference'):
+            raise ValueError('集合不存在')
+        if collection:
+            entries = [e for e in entries if e['collection'] == collection]
         selected_purpose = value('purpose')
         if selected_purpose and selected_purpose not in PURPOSES:
             raise ValueError('资料用途不存在')
@@ -245,12 +257,12 @@ class PromptLibrary(CatalogImportMixin):
         items.sort(key=lambda e: (e['stage'] == '扩展', e['title'].casefold(), e['id']))
         total = len(items)
         page = min(page, max(1, (total + 19) // 20))
-        summaries = [{k: v for k, v in e.items() if k != 'text'} | {'preview': e['text'][:130]}
+        summaries = [{k: v for k, v in e.items() if k not in ('text', 'original_text', 'adapted_text')} | {'preview': e.get('preview') or e['text'][:130]}
                      for e in items[(page - 1) * 20:page * 20]]
         with self.lock:
             return {'items': summaries, 'total': total, 'page': page, 'pages': max(1, (total + 19) // 20),
                     'counts': counts, 'purpose_counts': purpose_counts, 'private_count': len(self.catalog['entries']),
-                    'builtin_count': len(self.builtin), 'report': self.catalog['report'],
+                    'curated_count': len(self.curated), 'builtin_count': len(self.builtin), 'report': self.catalog['report'],
                     'folder': self.catalog.get('folder', ''), 'favorites': list(self.favorites)}
 
     def import_folder(self, folder):

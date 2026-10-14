@@ -117,7 +117,7 @@ class ModelWorkflowTests(unittest.TestCase):
     def test_config_origin_validation_and_missing_file(self):
         config = self.request('/api/model-status')[1]['settings']
         self.assertEqual(self.request('/api/model-settings', config, {'Origin': 'https://foreign.example'})[0], 403)
-        self.assertEqual(self.request('/api/model-settings', {**config, 'api_key': 'not-accepted'})[0], 400)
+        self.assertEqual(self.request('/api/model-settings', {**config, 'unknown_credential_field': 'not-accepted'})[0], 400)
         for endpoint in ('http://example.test/v1', 'https://user:password@example.test/v1', 'https://example.test/v1?secret=x'):
             self.assertEqual(self.request('/api/model-settings', {**config, 'base_url': endpoint})[0], 400)
         self.request('/api/model-settings', {**config, 'key_file': str(self.root / 'missing.txt')})
@@ -216,7 +216,7 @@ class PurposeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             lib = PromptLibrary(Path(__file__).parents[1] / 'data/prompts/builtin.json', Path(scratch))
             before = copy.deepcopy(lib.builtin)
-            self.assertEqual(lib.query({'purpose': ['shot']})['total'], 2)
+            self.assertEqual(lib.query({'collection': ['reference'], 'purpose': ['shot']})['total'], 2)
             for use in ('instruction', 'shot', 'reference'):
                 result = lib.query({'purpose': [use]})
                 self.assertTrue(all(e['purpose'] == use for e in result['items']))

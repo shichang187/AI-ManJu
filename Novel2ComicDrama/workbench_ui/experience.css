@@ -33,3 +33,25 @@ button:focus-visible,summary:focus-visible {outline:3px solid #79b7a7;outline-of
   .call-status{font-size:14px;}
 }
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;}}
+
+.provider-links {display:flex;flex-wrap:wrap;gap:12px;margin-top:16px;}
+.provider-links a,.platform-link {display:inline-flex;align-items:center;min-height:44px;color:#195e4e;text-decoration:underline;overflow-wrap:anywhere;}
+#modelStep .actions {flex-wrap:wrap;gap:8px;}
+#modelStep input,#modelStep select {min-height:44px;box-sizing:border-box;min-width:0;}
+#modelStep button {min-height:44px;white-space:normal;}
+#keyState {font-weight:600;color:#195e4e;}
+#configStatus {overflow-wrap:anywhere;}
+@media(max-width:600px){#modelStep input,#modelStep select{font-size:16px;}#modelStep .actions button{flex:1 1 150px;}}
+
+#plDialog {box-sizing:border-box;max-width:calc(100vw - 24px);}
+.pl-dialog-head>div {flex:1;min-width:0;}
+#plClose {flex-shrink:0;min-width:64px;min-height:44px;white-space:nowrap;}
+#plDialog summary {padding:8px 0;cursor:pointer;}
+@media(max-width:600px){
+  .pl-dialog-head {gap:10px;}
+  #plDialog input,#plDialog select,#plDialog textarea,#plEditor {font-size:16px;}
+  #plDialog button {min-height:44px;font-size:14px;}
+  #plDialog .pl-note,#plDialog .pl-source,#plDependencies,#plFeedback {font-size:14px;line-height:1.7;}
+}
+
+.work-tabs {top:var(--workbench-header-height,52px);z-index:9;}

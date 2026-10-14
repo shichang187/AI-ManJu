@@ -2,6 +2,9 @@
 window.experienceUI = (() => {
   const $ = id => document.getElementById(id), h = escapeHtml;
   const input = $('storyInputSection'), library = $('promptLibrary');
+  const header=document.querySelector('header');
+  const sizeHeader=()=>document.documentElement.style.setProperty('--workbench-header-height',header.getBoundingClientRect().height+'px');
+  sizeHeader();new ResizeObserver(sizeHeader).observe(header);
   // Modal editors must remain visible when the library tab itself is hidden.
   document.body.append($('plDialog'));
   const wrap = (parent, title, nodes) => {
@@ -22,13 +25,22 @@ window.experienceUI = (() => {
     <label>分镜指令<select id="instructionSelect" aria-label="分镜指令"><option value="">内置分镜指令</option></select></label></div>
     <div class="actions"><button id="generateStory">扩写并生成分镜</button><button id="browseInstructions" class="secondary">选择 / 编辑指令</button></div>
     <p id="modelStatus" class="call-status" role="status" aria-live="polite">读取模型设置…</p>
-    <details id="modelSettings" class="advanced"><summary>模型设置</summary><p>使用支持 Chat Completions 的接口。模型 ID 以服务商实际配置为准；保存配置不会调用模型。</p>
-    <div class="simple-grid"><label>接口地址<input id="modelBaseUrl" type="url" placeholder="https://服务商域名/v1" autocomplete="off"></label>
-    <label>模型 ID<input id="modelName" placeholder="服务商提供的模型 ID" autocomplete="off"></label></div>
-    <label>本地凭据文件的完整路径<input id="modelKeyFile" placeholder="例如 E:\\私有配置\\model-key.txt" autocomplete="off"></label>
-    <p>凭据只从本机文件读取；这里填写文件路径。</p><label>等待时限（秒）<input id="modelTimeout" type="number" min="5" max="180" value="60"></label>
-    <div class="actions"><button id="saveModelSettings">保存模型设置</button><button id="refreshModelStatus" class="secondary">重新检查配置</button></div>
-    <p id="configStatus" role="status"></p></details>`;
+    <nav class="provider-links" aria-label="硅基流动入口"><a href="https://siliconflow.cn/" target="_blank" rel="noopener noreferrer">硅基流动官网</a><a href="https://cloud.siliconflow.cn/account/ak" target="_blank" rel="noopener noreferrer">创建 API Key</a><a href="https://cloud.siliconflow.cn/models" target="_blank" rel="noopener noreferrer">查看模型</a></nav>
+    <details id="modelSettings" class="advanced" open><summary>模型设置</summary>
+    <label>供应商<select id="modelProvider"><option value="siliconflow">硅基流动</option><option value="custom">自定义兼容接口</option></select></label>
+    <label>API Key<input id="modelApiKey" type="password" autocomplete="off" spellcheck="false" aria-describedby="keyHelp" placeholder="粘贴 API Key；留空保留已保存的 Key"></label>
+    <p id="keyHelp">去官网登录 → 创建并复制 API Key → 在这里粘贴 → 保存并获取模型。Key 保存后不回显。</p><p id="keyState" role="status"></p>
+    <label>对话模型<select id="modelChoice"><option value="">先获取模型，再选择</option></select></label>
+    <div class="actions"><button id="saveAndFetch">保存并获取模型</button><button id="saveModelSettings" class="secondary">保存设置</button><button id="replaceModelKey" class="secondary">更换 Key</button><button id="clearModelKey" class="secondary">清除当前供应商 Key</button></div>
+    <p id="configStatus" role="status" aria-live="polite"></p>
+    <details class="advanced"><summary>高级：自定义接口、模型 ID 与旧凭据</summary>
+    <label>接口地址<input id="modelBaseUrl" type="url" autocomplete="off" placeholder="https://服务商域名/v1"></label>
+    <label>手动模型 ID<input id="modelName" autocomplete="off" placeholder="服务商提供的对话模型 ID"></label>
+    <label>等待时限（秒）<input id="modelTimeout" type="number" min="5" max="180" value="60"></label>
+    <label>凭据方式<select id="modelCredentialMode"><option value="saved">页面输入，安全保存</option><option value="legacy">兼容旧凭据文件 / 环境变量</option></select></label>
+    <label>旧凭据文件完整路径<input id="modelKeyFile" autocomplete="off" placeholder="仅在旧凭据方式下填写"></label>
+    <p>不复制或删除旧凭据文件。文件路径留空时仅在旧模式读取原环境配置。</p>
+    <div class="actions"><button id="refreshModelStatus" class="secondary">重新检查配置</button><button id="testModel" class="secondary">发送测试请求（可能消耗文本额度）</button></div></details></details>`;
   input.after(step);
   $('modelHandoff').querySelector('h2').textContent='编辑指令 · 手动粘贴模型结果';
   wrap(step,'高级：编辑指令与手动导入',[$('modelHandoff')]);
@@ -41,6 +53,7 @@ window.experienceUI = (() => {
   $('projectSection').insertAdjacentHTML('afterbegin','<p class="step-note">先保存项目，生成的视频按镜头 ID 命名并下载到项目文件夹。素材平台账号能力和效果未验证。</p>');
   $('projectSection').querySelector('.actions').insertAdjacentHTML('beforeend','<button id="materialPlatform" class="secondary">打开豆包生成素材</button>');
   $('materialPlatform').onclick=()=>openDoubao();
+  $('materialPlatform').insertAdjacentHTML('afterend','<a class="platform-link" href="https://jimeng.jianying.com/ai-tool/home/" target="_blank" rel="noopener noreferrer">打开即梦</a>');
   $('composeSection').querySelector('h2').textContent='收集完成后合成成片';
   const bindings=$('assetBindings');
   wrap(bindings,'高级：手动素材绑定与输出设置',[
@@ -51,7 +64,7 @@ window.experienceUI = (() => {
   const baseInputs=collectInputs;
   collectInputs=()=>({...baseInputs(),generation_mode:$('generationMode').value,
     selected_instruction_id:$('instructionSelect').value});
-  let busy=false, lastStatus=null, poll=null, selectRequest=0;
+  let instructionLoading=false, busy=false, lastStatus=null, poll=null, selectRequest=0;
   function payload() {
     const a=state.interview.answers || {},sb=state.storyboard || {};
     return {...collectInputs(),...a,characters:sb.characters || [],scenes:sb.scenes || []};
@@ -66,9 +79,7 @@ window.experienceUI = (() => {
   }
   async function refreshStatus(fill=false) {
     const s=await api('/api/model-status');lastStatus=s;
-    if(fill){$('modelBaseUrl').value=s.settings.base_url;$('modelName').value=s.settings.model;
-      $('modelKeyFile').value=s.settings.key_file;$('modelTimeout').value=s.settings.timeout;}
-    $('configStatus').textContent=s.message;
+    applyModelStatus(s,fill);
     showStatus();return s;
   }
   function showStatus() {
@@ -79,34 +90,88 @@ window.experienceUI = (() => {
       `模型：${lastStatus.settings.model||'未设置'} · ${lastStatus.message}${last}`;
     $('modelStatus').dataset.status=mode==='local'?'idle':c.status;
     if(c.status==='running')$('modelStatus').textContent=`${c.model} 正在扩写分镜…`;
-    $('generateStory').disabled=busy||c.status==='running';
+    $('generateStory').disabled=busy||instructionLoading||c.status==='running';
     $('generateStory').textContent=mode==='local'?'用本地规则分段':'扩写并生成分镜';
     $('instructionSelect').disabled=mode==='local'||busy;
   }
   async function loadInstructions() {
     const opts=[];let page=1,pages=1;
-    do{const d=await api('/api/prompts?purpose=instruction&page='+page);pages=d.pages;opts.push(...d.items);page++;}while(page<=pages);
+    do{const d=await api('/api/prompts?collection=curated&purpose=instruction&page='+page);pages=d.pages;opts.push(...d.items);page++;}while(page<=pages);
     const selected=state.inputs?.selected_instruction_id||'';
     $('instructionSelect').innerHTML='<option value="">内置分镜指令</option>'+opts.map(e=>`<option value="${h(e.id)}">${h(e.title)}${e.stage==='分镜'?' · 分镜':''}</option>`).join('');
     $('instructionSelect').value=selected;
   }
   $('instructionSelect').onchange=async()=>{
-    const id=$('instructionSelect').value,seq=++selectRequest;
+    const id=$('instructionSelect').value,seq=++selectRequest;instructionLoading=true;showStatus();
     try{const text=id?(await api('/api/prompts/detail?id='+encodeURIComponent(id))).text:
       '把故事扩写为可拍摄的漫剧分镜，保留人物、事件顺序、对白归属和结尾，保持场景与角色一致。';
       if(seq!==selectRequest)return;$('directorInstruction').value=text;await saveState();toast('分镜指令已选择，可直接生成');
-    }catch(e){toast(e.message);}
+    }catch(e){toast(e.message);}finally{if(seq===selectRequest){instructionLoading=false;showStatus();}}
   };
   $('browseInstructions').onclick=()=>promptLibrary.browse(0,'instruction');
-  $('saveModelSettings').onclick=async()=>{
-    try{const s=await api('/api/model-settings',{base_url:$('modelBaseUrl').value,model:$('modelName').value,
-      key_file:$('modelKeyFile').value,timeout:Number($('modelTimeout').value)});lastStatus=s;showStatus();$('configStatus').textContent=s.message;toast('模型设置已保存');}
-    catch(e){$('configStatus').textContent='保存失败：'+e.message;}
+  const modelButtons=['saveModelSettings','saveAndFetch','replaceModelKey','clearModelKey','testModel'];
+  let settingBusy=false;
+  function settingsPayload(action='keep') {
+    return {provider:$('modelProvider').value,base_url:$('modelBaseUrl').value,model:$('modelName').value,
+      credential_mode:$('modelCredentialMode').value,key_file:$('modelKeyFile').value,
+      timeout:Number($('modelTimeout').value),api_key:$('modelApiKey').value,key_action:action};
+  }
+  function modelControls(disabled){modelButtons.forEach(id=>$(id).disabled=disabled);$('modelProvider').disabled=disabled;$('modelChoice').disabled=disabled;}
+  async function saveSettings(action='keep', fetchList=false) {
+    if(settingBusy)return;settingBusy=true;modelControls(true);
+    $('configStatus').textContent=fetchList?'正在安全保存并获取模型…':'正在安全保存…';
+    try {
+      lastStatus=await api('/api/model-settings',settingsPayload(action));
+      $('modelApiKey').value='';
+      if(fetchList)lastStatus=await api('/api/model-list',{});
+      applyModelStatus(lastStatus,false);showStatus();return true;
+    }catch(e){$('configStatus').textContent='操作失败：'+e.message;}
+    finally{$('modelApiKey').value='';settingBusy=false;modelControls(false);}
+  }
+  function applyModelStatus(s,fill) {
+    if(fill){$('modelProvider').value=s.settings.provider;$('modelBaseUrl').value=s.settings.base_url;
+      $('modelName').value=s.settings.model;$('modelKeyFile').value=s.settings.key_file;
+      $('modelTimeout').value=s.settings.timeout;$('modelCredentialMode').value=s.settings.credential_mode;}
+    $('modelBaseUrl').disabled=$('modelProvider').value==='siliconflow';
+    $('keyState').textContent=(s.has_key?'已保存 API Key':'未保存可用的 API Key')+' · '+s.credential_storage;
+    const ids=[...s.model_list.models];const chosen=$('modelName').value;if(chosen&&!ids.includes(chosen))ids.unshift(chosen);
+    $('modelChoice').innerHTML='<option value="">选择模型 / 在高级入口手动填写</option>'+ids.map(id=>`<option value="${h(id)}">${h(id)}</option>`).join('');
+    $('modelChoice').value=$('modelName').value;
+    $('configStatus').textContent=s.message+' '+s.model_list.message;
+  }
+  $('saveModelSettings').onclick=()=>saveSettings();
+  $('saveAndFetch').onclick=()=>saveSettings('keep',true);
+  $('replaceModelKey').onclick=()=>saveSettings('replace');
+  $('clearModelKey').onclick=()=>{if(window.confirm('清除当前供应商的 API Key？其他供应商和已有项目将保留。'))saveSettings('clear');};
+  $('modelChoice').onchange=()=>{$('modelName').value=$('modelChoice').value;saveSettings();};
+  const uiEndpoints={};
+  $('modelProvider').onchange=async()=>{
+    uiEndpoints[lastStatus?.settings.provider||'siliconflow']=$('modelBaseUrl').value;
+    $('modelApiKey').value='';$('modelKeyFile').value='';$('modelName').value='';$('modelChoice').innerHTML='<option value="">请选择模型</option>';
+    $('modelCredentialMode').value='saved';
+    const provider=$('modelProvider').value;
+    $('modelBaseUrl').value=provider==='siliconflow'?'https://api.siliconflow.cn/v1':uiEndpoints.custom||'';
+    $('modelBaseUrl').disabled=provider==='siliconflow';
+    $('keyState').textContent='请保存所选供应商；Key 按供应商和接口分别保存。';
+    if(!$('modelBaseUrl').value)return;
+    try{lastStatus=await api('/api/model-settings',{provider,base_url:$('modelBaseUrl').value});applyModelStatus(lastStatus,true);showStatus();}
+    catch(e){$('configStatus').textContent=e.message;}
   };
+  $('modelSettings').addEventListener('toggle',()=>{if(!$('modelSettings').open)$('modelApiKey').value='';});
+  window.addEventListener('pagehide',()=>{$('modelApiKey').value='';});
+  $('testModel').onclick=async()=>{
+    if(settingBusy||!window.confirm('发送原创 JSON 连接测试，可能消耗服务商文本额度。继续？'))return;
+    if(!await saveSettings()||!lastStatus?.ready)return;
+    settingBusy=true;modelControls(true);
+    try{lastStatus=await api('/api/model-test',{});showStatus();$('configStatus').textContent=lastStatus.call.message;}
+    catch(e){$('configStatus').textContent=e.message;}
+    finally{settingBusy=false;modelControls(false);}
+  };
+
   $('refreshModelStatus').onclick=()=>refreshStatus().catch(e=>{$('configStatus').textContent=e.message;});
   $('generationMode').onchange=()=>{showStatus();saveState();};
   expandStory=async()=>{
-    if(busy)return;const args=payload();
+    if(busy)return;if(instructionLoading)return toast('正在加载分镜指令，请稍候');const args=payload();
     if(!args.text)return toast('请输入故事内容');
     let failure='';try{
       await refreshStatus();
@@ -168,16 +233,16 @@ window.experienceUI = (() => {
     }catch(e){toast('重置失败：'+e.message);}
   };
   // Return to the active workflow without losing the selected shot.
-  $('tabCreate').textContent='三步创作';$('tabLibrary').textContent='按用途选资料';
+  $('tabCreate').textContent='三步创作';$('tabLibrary').textContent='精选与高级参考库';
   $('plDialog').querySelector('.pl-dialog-footer').insertAdjacentHTML('beforeend','<button id="plBackCreate" class="secondary">回到创作</button>');
   $('plBackCreate').onclick=()=>{$('plDialog').close();upgradeUI.tab(false);finish.scrollIntoView();};
   const quick=document.createElement('dialog');quick.id='quickTemplates';quick.setAttribute('aria-labelledby','quickTitle');
-  quick.innerHTML='<h2 id="quickTitle">选择镜头模板</h2><p>模板与片段按内容规则建议分类，使用前请编辑。</p><input id="quickQuery" type="search" aria-label="搜索镜头模板" placeholder="搜索运镜、风格或画面"><div id="quickList"></div><div class="actions"><button id="quickPrev" class="secondary">上一页</button><button id="quickNext" class="secondary">下一页</button><button id="quickClose" class="secondary">关闭</button></div>';
+  quick.innerHTML='<h2 id="quickTitle">选择镜头模板</h2><p>精选已通过内容审核；实际生成效果未验证。先填入设定，再预览使用。</p><input id="quickQuery" type="search" aria-label="搜索镜头模板" placeholder="搜索运镜、风格或画面"><div id="quickList"></div><div class="actions"><button id="quickPrev" class="secondary">上一页</button><button id="quickNext" class="secondary">下一页</button><button id="quickClose" class="secondary">关闭</button></div>';
   document.body.append(quick);
   let quickIndex=0,quickPage=1,quickSeq=0,quickTimer;
   async function loadQuick(){const seq=++quickSeq;
-    try{const d=await api('/api/prompts?purpose=shot&page='+quickPage+'&q='+encodeURIComponent($('quickQuery').value));
-      if(seq!==quickSeq)return;$('quickList').innerHTML=d.items.map(e=>`<article><h3>${h(e.title)}</h3><p>${h(e.preview)}</p><button data-template="${h(e.id)}" class="secondary">编辑并应用</button></article>`).join('')||'<p>未找到模板。</p>';
+    try{const d=await api('/api/prompts?collection=curated&purpose=shot&page='+quickPage+'&q='+encodeURIComponent($('quickQuery').value));
+      if(seq!==quickSeq)return;$('quickList').innerHTML=d.items.map(e=>`<article><h3>${h(e.title)}</h3><p>${h(e.preview)}</p><p>${h(e.input_mode||'')} · ${h(e.scope||'')} · ${h(e.review_status||'')} · ${h(e.test_status||'未实测')}</p><button data-template="${h(e.id)}" class="secondary">编辑并应用</button></article>`).join('')||'<p>未找到模板。</p>';
       $('quickPrev').disabled=d.page<=1;$('quickNext').disabled=d.page>=d.pages;
       $('quickList').querySelectorAll('button').forEach(b=>b.onclick=()=>{quick.close();promptLibrary.open(b.dataset.template,quickIndex);});
     }catch(e){$('quickList').textContent='读取失败：'+e.message;}}

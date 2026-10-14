@@ -2,7 +2,7 @@
 
 把故事整理成分镜，挑选提示词，在你使用的生成平台制作素材，再回到本地合成视频。
 
-**0.7 简单创作体验**：默认“输入故事 → 模型扩写分镜 → 编辑并生成素材”，增加模型设置、调用状态与失败保留，按用途选择指令和镜头模板。说明见 [三步创作](docs/simple-workflow.md)。
+**0.8 模型设置与精选模板**：三步创作保留，内置硅基流动官网与API Key入口，页面安全输入、当前用户加密存储、获取模型列表。默认使用原创审核指令和本机私有精选模板，旧资料转高级参考。说明见 [三步创作](docs/simple-workflow.md)。
 
 **0.6 本地升级**：稳定项目 ID、保存与版本恢复、明确素材对应、独立导出与失败校验，可编辑分镜、复制导演指令及粘贴结果导入。数据兼容、迁移和操作说明见 [本地升级说明](docs/local-upgrade.md)。
 
@@ -22,7 +22,7 @@
 
 ## 快速开始
 
-需要 Windows、Python **3.10 或更新版本**。视频合成另需 FFmpeg，并将其加入 PATH。提示词库与离线分段使用 Python 标准库。真实模型调用需要在「模型设置」中填写接口、模型 ID 和本机凭据文件路径。
+需要 Windows、Python **3.10 或更新版本**。视频合成另需 FFmpeg，并将其加入 PATH。提示词库与离线分段使用 Python 标准库。真实文本模型在「模型设置」中选择供应商、粘贴 API Key、保存并获取模型；Windows 当前用户加密保存。自定义接口、模型 ID 和旧凭据文件位于高级入口。
 
 ```powershell
 git clone https://github.com/shichabg/AI-ManJu.git
@@ -104,6 +104,6 @@ python -B -m unittest discover -s Novel2ComicDrama/tests -v
 
 隔离测试或迁移时可设置 `AIMANJU_OUTPUT_DIR` 和 `AIMANJU_PRIVATE_DATA_DIR`，分别指定输出目录与私有资料目录。自定义目录应放在仓库外，或自行加入 Git 忽略规则。
 
-默认入口选择真实模型调用，需先保存模型设置；未配置时显示说明，可显式选择本地规则分段。调用失败保留旧分镜并显示原因。新增凭据从本机文件读取；原有 `EXPAND_LLM_API_KEY`、`EXPAND_LLM_BASE_URL`、`EXPAND_LLM_MODEL` 配置继续兼容。私有模型配置不提交到仓库。旧 CLI 的行为保持兼容，工作台不会静默降级。
+默认入口选择真实模型调用，需先保存模型设置；未配置时显示说明，可显式选择本地规则分段。调用失败保留旧分镜并显示原因。新增凭据从页面输入并用 Windows 当前用户 DPAPI 加密；其他系统仅本次会话保存，旧凭据文件方式放高级入口。原有 `EXPAND_LLM_API_KEY`、`EXPAND_LLM_BASE_URL`、`EXPAND_LLM_MODEL` 配置继续兼容。私有模型配置不提交到仓库。旧 CLI 的行为保持兼容，工作台不会静默降级。
 
 旧的 `Novel2ComicDrama/main.py` CLI 管线继续保留。贡献方式见 [CONTRIBUTING.md](CONTRIBUTING.md)，版本变化见 [CHANGELOG.md](CHANGELOG.md)。当前未新增开源许可证；资料传播授权与项目许可证应由作者确定。
