@@ -10,3 +10,6 @@ Novel2ComicDrama/output/
 .env
 .env.*
 !.env.example
+
+# Release build artifacts
+dist/

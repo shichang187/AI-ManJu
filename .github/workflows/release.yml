@@ -1,0 +1,31 @@
+name: Publish paused snapshot
+on:
+  push:
+    tags:
+      - v0.8.0-paused.20261015
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build clean source and review sample
+        run: python scripts/package_release.py
+      - name: Publish paused prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: >-
+          gh release create "$RELEASE_TAG"
+          --verify-tag --prerelease --latest=false
+          --title "0.8 paused snapshot — 创作与实用性验收未通过"
+          --notes-file docs/pause-2026-10-15.md
+          dist/AI-ManJu-v0.8.0-paused.20261015-source.zip
+          dist/borrow-a-second-v3.mp4 dist/PAUSE-NOTES.md dist/SHA256SUMS.txt

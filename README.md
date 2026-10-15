@@ -1,8 +1,10 @@
 # AI 漫剧工作台
 
+**已暂停（2026-10-15）**：作者反馈当前成果“没有一点实用性”，要求收尾归档。当前实用价值与创作验收未通过，停止后续开发和生成。[暂停说明](docs/pause-2026-10-15.md) · [GitHub Releases](https://github.com/shichang187/AI-ManJu/releases)。
+
 把故事整理成分镜，挑选提示词，在你使用的生成平台制作素材，再回到本地合成视频。
 
-**真实创作验证（2026-10-15）**：原创《借一秒》已有30.1秒完整有声可审版，保留初版、修改版、实际平台素材与整片播放记录；作者创作验收待完成，口型、听感与连续性仍有缺口。[实际制作与方法边界](docs/creative-validation-2026-10-15.md)。
+**真实创作验证（2026-10-15）**：原创《借一秒》已有30.1秒完整有声可审版，保留初版、修改版、实际平台素材与整片播放记录；交付后的最新作者反馈否定当前实用价值；口型、听感与连续性仍有缺口。[实际制作与方法边界](docs/creative-validation-2026-10-15.md)。
 
 **0.8 模型设置与精选模板**：三步创作保留，内置硅基流动官网与API Key入口，页面安全输入、当前用户加密存储、获取模型列表。默认使用原创审核指令和本机私有精选模板，旧资料转高级参考。说明见 [三步创作](docs/simple-workflow.md)。
 
@@ -27,7 +29,7 @@
 需要 Windows、Python **3.10 或更新版本**。视频合成另需 FFmpeg，并将其加入 PATH。提示词库与离线分段使用 Python 标准库。真实文本模型在「模型设置」中选择供应商、粘贴 API Key、保存并获取模型；Windows 当前用户加密保存。自定义接口、模型 ID 和旧凭据文件位于高级入口。
 
 ```powershell
-git clone https://github.com/shichabg/AI-ManJu.git
+git clone https://github.com/shichang187/AI-ManJu.git
 cd AI-ManJu\Novel2ComicDrama
 python workbench_server.py
 ```
